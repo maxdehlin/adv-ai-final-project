@@ -21,9 +21,10 @@ class FeatureExtractor(ABC):
         ...
 
     @abstractmethod
-    def __call__(self, state: np.ndarray, action: np.ndarray) -> np.ndarray:
+    def __call__(self, state: np.ndarray, action) -> np.ndarray:
         """
         Compute φ(s, a) for a single (state, action) pair.
+        action may be an int (discrete) or np.ndarray (continuous).
         Returns a 1-D array of shape (F,).
         """
         ...
@@ -45,7 +46,9 @@ class FeatureExtractor(ABC):
 
 
 # ---------------------------------------------------------------------------
-# CarRacing-v2 feature extractor
+# CarRacing-v2 feature extractor  (continuous=False — 5 discrete actions)
+#
+# Actions:  0=do nothing  1=steer left  2=steer right  3=gas  4=brake
 #
 # CarRacing-v2 observations are 96×96×3 RGB images.
 # These hand-crafted features are designed to distinguish expert from
@@ -53,16 +56,13 @@ class FeatureExtractor(ABC):
 #
 # Features (F = 8):
 #   0  road_coverage     fraction of image pixels that are road (grey)
-#   1  speed_x           horizontal velocity proxy (mean horizontal pixel flow placeholder)
-#   2  speed_y           vertical velocity proxy
-#   3  steering_magnitude |action[0]|  – how aggressively the agent steers
-#   4  gas               action[1]
-#   5  brake             action[2]
-#   6  grass_coverage    fraction of image pixels that are grass (green)
-#   7  center_deviation  how far the car is from the horizontal center of the image
-#
-# NOTE: speed_x / speed_y require two consecutive frames.  When only one
-#       frame is available (first step), they default to 0.
+#   1  grass_coverage    fraction of image pixels that are grass (green)
+#   2  center_deviation  how far road centre is from image centre [-1, 1]
+#   3  action_nothing    1 if action == 0, else 0
+#   4  action_steer_left  1 if action == 1, else 0
+#   5  action_steer_right 1 if action == 2, else 0
+#   6  action_gas         1 if action == 3, else 0
+#   7  action_brake       1 if action == 4, else 0
 # ---------------------------------------------------------------------------
 
 # Pixel colour thresholds (empirical for CarRacing-v2)
@@ -91,65 +91,37 @@ def _center_deviation(img: np.ndarray) -> float:
     return float((road_centre - img_centre) / img_centre)
 
 
+N_ACTIONS = 5  # do nothing, steer left, steer right, gas, brake
+
+
 class CarRacingFeatures(FeatureExtractor):
     """
-    Feature extractor for CarRacing-v2 (96×96×3 observations).
+    Feature extractor for CarRacing-v2 with continuous=False (5 discrete actions).
 
     Usage:
         extractor = CarRacingFeatures()
         traj = extractor.extract_trajectory(traj)
     """
 
-    def __init__(self):
-        self._prev_state: np.ndarray = None
-
     @property
     def feature_dim(self) -> int:
-        return 8
+        return 8  # 3 visual features + 5 action one-hot
 
-    def reset(self):
-        """Call at the start of each trajectory to clear the previous-frame cache."""
-        self._prev_state = None
-
-    def __call__(self, state: np.ndarray, action: np.ndarray) -> np.ndarray:
+    def __call__(self, state: np.ndarray, action: int) -> np.ndarray:
         """
         state:  (96, 96, 3) uint8 image
-        action: (3,)  [steering, gas, brake]
+        action: int in {0, 1, 2, 3, 4}
         """
-        img = state.astype(np.float32)
-        n_pixels = img.shape[0] * img.shape[1]
+        n_pixels = state.shape[0] * state.shape[1]
 
         road_coverage  = _road_mask(state).sum() / n_pixels
         grass_coverage = _grass_mask(state).sum() / n_pixels
         center_dev     = _center_deviation(state)
 
-        # Optical-flow proxy: mean absolute pixel difference (very rough speed estimate)
-        if self._prev_state is not None:
-            diff = np.abs(img - self._prev_state.astype(np.float32))
-            speed_x = diff[:, :, 0].mean() / 255.0
-            speed_y = diff[:, :, 1].mean() / 255.0
-        else:
-            speed_x = 0.0
-            speed_y = 0.0
+        one_hot = np.zeros(N_ACTIONS, dtype=np.float64)
+        one_hot[int(action)] = 1.0
 
-        self._prev_state = state
-
-        steering_mag = float(abs(action[0]))
-        gas          = float(np.clip(action[1], 0, 1))
-        brake        = float(np.clip(action[2], 0, 1))
-
-        return np.array([
-            road_coverage,
-            speed_x,
-            speed_y,
-            steering_mag,
-            gas,
-            brake,
-            grass_coverage,
-            center_dev,
-        ], dtype=np.float64)
-
-    def extract_trajectory(self, traj: Trajectory) -> Trajectory:
-        """Override to reset the frame cache at the start of each trajectory."""
-        self.reset()
-        return super().extract_trajectory(traj)
+        return np.concatenate([
+            [road_coverage, grass_coverage, center_dev],
+            one_hot,
+        ])

@@ -20,16 +20,17 @@ We compare three trust estimation methods (β functions) against a baseline (unw
 
 ## 1. Environment & Tooling
 
-**Environment**: OpenAI Gym `CarRacing-v2`
-- Observation: 96×96 RGB image (continuous)
-- Action: `[steering ∈ [-1,1], gas ∈ [0,1], brake ∈ [0,1]]`
+**Environment**: `CarRacing-v2` with `continuous=False`
+- Observation: 96×96 RGB image
+- Action: 5 discrete actions — `0` do nothing, `1` steer left, `2` steer right, `3` gas, `4` brake
 - Ground-truth reward: score based on tiles visited (used only for final evaluation, NOT during IRL training)
 
-**Downstream RL**: After IRL produces a reward function, we train a standard RL agent (e.g., PPO or SAC) using that reward. Final evaluation score is what we report.
+**Downstream RL**: After IRL produces a reward function, we train a standard RL agent (e.g., PPO) using that reward. Final evaluation score is what we report.
 
-**Why CarRacing?**
-- Continuous state/action space makes poisoning realistic and interesting.
-- Provides a natural "poison" scenario: an agent that swerves, brakes randomly, or drives off-track is clearly suboptimal.
+**Why CarRacing (discrete)?**
+- Discrete actions make soft value iteration tractable and the partition function approximation cleaner.
+- Keeps the full motivating narrative from the proposal (swerving car, off-track behavior).
+- Natural poison scenarios: random discrete actions, always-brake agent, always-steer-left agent.
 - Ground-truth reward exists for evaluation.
 
 ---
@@ -45,13 +46,14 @@ Collect `N_expert` clean trajectories using one of:
 Recommended: `N_total = 200` trajectories total across all datasets. Each trajectory runs for a fixed horizon `T` (e.g., 500 steps or one full lap).
 
 Feature representation per trajectory (for methods that need it):
-- Mean speed
-- Mean distance from track center
-- Total tiles visited
-- Variance in steering
-- Mean absolute steering angle
-- Whether the car left the track (boolean)
-- Summary statistics of CNN features extracted from states (optional, harder)
+- Mean road coverage (fraction of visible image that is road)
+- Grass coverage (off-track indicator)
+- Center deviation (how far road center is from image center)
+- Gas action frequency (fraction of steps with action=3)
+- Brake action frequency (fraction of steps with action=4)
+- Steer left frequency (action=1)
+- Steer right frequency (action=2)
+- Total tiles visited proxy (via road coverage over time)
 
 ### 2.2 Poisoned Demonstrations
 
@@ -59,10 +61,10 @@ Two classes of poison to consider (matching the proposal's "adversarial and unin
 
 | Type | Description | Motivation |
 |------|-------------|------------|
-| **Unintentional** | Suboptimal behavior: random actions, excessive swerving, frequent braking | Mimics a novice or distracted demonstrator |
+| **Unintentional** | Suboptimal behavior: random discrete actions, always-brake, always-steer-left | Mimics a novice or distracted demonstrator |
 | **Adversarial** | Crafted to steer the reward function in a specific wrong direction | Mimics a malicious actor |
 
-For the initial implementation, use **unintentional poison** (simpler and well-motivated by the car racing example in the proposal). Generate poison trajectories using a random or scripted bad-behavior policy.
+For the initial implementation, use **unintentional poison** (simpler and well-motivated by the car racing example in the proposal). Concretely: a policy that samples uniformly from `{0,1,2,3,4}` at every step. This is easy to generate, clearly suboptimal, and produces visually distinct trajectories (car spins out, leaves track).
 
 Adversarial poison can be added later if time permits (requires solving an optimization problem over the reward function space).
 
@@ -101,13 +103,14 @@ The gradient is:
 
 The expected feature counts under policy `π` are computed via soft value iteration (dynamic programming on a discretized or tabular representation).
 
-### 3.2 Practical Considerations for CarRacing
+### 3.2 Practical Considerations for CarRacing (discrete)
 
-CarRacing has a continuous state space (96×96 images). We need one of:
-- **Feature-based IRL**: Hand-craft a feature function `φ(s)` (speed, lane position, steering variance, etc.), learn `r = θ^T φ(s)`. This is simpler and tractable.
-- **Deep MaxEnt IRL**: Use a neural network `r_θ(s)` as the reward. Requires soft value iteration approximation. More expressive but harder to train.
+The state space is still 96×96 images (continuous), but discrete actions unlock a cleaner approach:
 
-**Recommendation**: Start with feature-based IRL using 5–8 hand-crafted features. This is consistent with the original MaxEnt IRL paper and makes the trust weight comparison cleaner.
+- **Feature-based IRL**: Hand-craft `φ(s, a)` (road coverage, grass coverage, action frequencies, etc.), learn `r = θ^T φ(s, a)`. Tractable and interpretable.
+- **Partition function**: With discrete actions, we use the trajectory-level softmax over the finite demo set. This is the same approximation as before, but now also valid for soft value iteration over the 5-action space if needed.
+
+**Recommendation**: Feature-based linear reward with 8 hand-crafted features (already implemented in `CarRacingFeatures`). Update the feature extractor to use discrete action one-hot encoding instead of continuous action values.
 
 ---
 
@@ -221,7 +224,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 
 ### 6.2 RL Training with Learned Reward
 
-- Use PPO (stable-baselines3) trained with `r_θ` as the reward signal for `E` environment steps (e.g., 500k steps).
+- Use PPO (stable-baselines3) with `continuous=False` trained with `r_θ` as the reward signal for `E` environment steps (e.g., 500k steps).
 - No access to ground-truth reward during RL training.
 
 ### 6.3 Evaluation
@@ -260,11 +263,12 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 
 | Challenge | Mitigation |
 |-----------|------------|
-| Continuous state space makes tabular MaxEnt IRL intractable | Use feature-based linear reward; discretize or sample state space for partition function |
-| Partition function Z(θ) is intractable for large state spaces | Approximate via importance sampling or restrict to visited states |
+| 96×96 image state space still continuous | Use feature-based linear reward; images only used to compute hand-crafted scalar features |
+| Partition function Z(θ) approximated over finite demo set | Trajectory-level softmax; valid and standard for this setting |
 | Poison at 50% may corrupt β_RC initialization | Warm-start β_RC with β_OD weights |
 | Anchor set assumption for β_PC is unrealistic | Discuss as a limitation; test sensitivity to anchor set size |
-| CarRacing is hard to get demonstrations for | Use pre-trained PPO agent; document the agent's score |
+| Expert demos require pre-trained agent | Train PPO on ground-truth reward first; save demos before mixing poison |
+| Feature extractor uses continuous action values | Update `CarRacingFeatures` to use discrete action one-hot / frequency features |
 
 ---
 
@@ -274,7 +278,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 
 2. **Feature set**: What 5–8 features best capture the distinction between expert and poisoned behavior in CarRacing? Candidates: mean speed, steering variance, off-track percentage, tiles per step, brake frequency.
 
-3. **Partition function approximation**: Which approximation is best for continuous CarRacing? Options: (a) restrict to visited state-action pairs, (b) discretize state space, (c) use the "neural" approach of Deep MaxEnt IRL.
+3. **Partition function approximation**: With discrete actions, trajectory-level softmax over demo set is the chosen approach. Soft value iteration over the 5-action space is a possible upgrade if time permits.
 
 4. **β_PC anchor set size**: How many guaranteed-clean trajectories are assumed available? Is this a realistic assumption for the problem framing?
 

@@ -12,12 +12,13 @@ N = 20  # trajectories
 T = 50  # steps per trajectory
 
 # Synthetic trajectories with random features
+# actions are discrete ints in {0,1,2,3,4}
 trajectories = []
 for _ in range(N):
     feat = np.random.rand(T, F)
     traj = Trajectory(
-        states=np.zeros((T, 96, 96, 3)),   # placeholder
-        actions=np.zeros((T, 3)),
+        states=np.zeros((T, 96, 96, 3)),          # placeholder
+        actions=np.random.randint(0, 5, size=(T,)), # discrete actions
         features=feat,
     )
     traj.compute_feature_sum()

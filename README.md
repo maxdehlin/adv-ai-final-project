@@ -27,7 +27,7 @@ pip install scikit-learn numpy
 python -m data_collection.train_expert
 ```
 
-Trains PPO on `CarRacing-v2` (discrete actions) for 2M steps. Saves model to `models/expert_ppo.zip`. To customise:
+Trains PPO on `CarRacing-v3` (discrete actions) for 2M steps. Saves model to `models/expert_ppo.zip`. To customise:
 
 ```bash
 python -m data_collection.train_expert --timesteps 3000000 --out models/expert_ppo.zip

@@ -46,11 +46,11 @@ class FeatureExtractor(ABC):
 
 
 # ---------------------------------------------------------------------------
-# CarRacing-v2 feature extractor  (continuous=False — 5 discrete actions)
+# CarRacing-v3 feature extractor  (continuous=False — 5 discrete actions)
 #
 # Actions:  0=do nothing  1=steer left  2=steer right  3=gas  4=brake
 #
-# CarRacing-v2 observations are 96×96×3 RGB images.
+# CarRacing-v3 observations are 96×96×3 RGB images.
 # These hand-crafted features are designed to distinguish expert from
 # poisoned behavior without relying on ground-truth reward.
 #
@@ -65,7 +65,7 @@ class FeatureExtractor(ABC):
 #   7  action_brake       1 if action == 4, else 0
 # ---------------------------------------------------------------------------
 
-# Pixel colour thresholds (empirical for CarRacing-v2)
+# Pixel colour thresholds (empirical for CarRacing-v3)
 _ROAD_GREY_LOW  = np.array([80,  80,  80])
 _ROAD_GREY_HIGH = np.array([130, 130, 130])
 _GRASS_GREEN_LOW  = np.array([90, 170, 90])
@@ -96,7 +96,7 @@ N_ACTIONS = 5  # do nothing, steer left, steer right, gas, brake
 
 class CarRacingFeatures(FeatureExtractor):
     """
-    Feature extractor for CarRacing-v2 with continuous=False (5 discrete actions).
+    Feature extractor for CarRacing-v3 with continuous=False (5 discrete actions).
 
     Usage:
         extractor = CarRacingFeatures()

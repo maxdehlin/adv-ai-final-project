@@ -25,7 +25,7 @@ from stable_baselines3 import PPO
 
 def _make_env(render: bool = False):
     render_mode = "human" if render else None
-    return gym.make("CarRacing-v2", continuous=False, render_mode=render_mode)
+    return gym.make("CarRacing-v3", continuous=False, render_mode=render_mode)
 
 
 def _random_policy(_obs):

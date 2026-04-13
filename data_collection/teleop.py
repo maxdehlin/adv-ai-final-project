@@ -1,5 +1,5 @@
 """
-Human-controlled demonstration collection for CarRacing-v2 (discrete).
+Human-controlled demonstration collection for CarRacing-v3 (discrete).
 
 Drive the car yourself using arrow keys. Each completed episode is saved
 as a trajectory file that can be used as poison or expert data.
@@ -42,7 +42,7 @@ def run_teleop(out_dir: str, n_episodes: int, max_steps: int = 1000, start_idx: 
     import pygame
 
     os.makedirs(out_dir, exist_ok=True)
-    env = gym.make("CarRacing-v2", continuous=False, render_mode="human")
+    env = gym.make("CarRacing-v3", continuous=False, render_mode="human")
 
     saved_paths = []
     ep = 0

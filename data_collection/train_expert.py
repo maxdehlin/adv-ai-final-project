@@ -65,19 +65,21 @@ class TrainingLogger(BaseCallback):
         elapsed = time.time() - self._start_time
         ts      = self.num_timesteps
 
-        # --- fetch logger values (SB3 stores them in self.logger) ---
-        def _get(key, default=float("nan")):
-            try:
-                return self.logger.name_to_value[key]
-            except (KeyError, AttributeError):
-                return default
+        # Read from the model's rollout buffer / ep_info_buffer directly
+        # to avoid touching SB3's internal logger dict (causes mismatch in 2.8.0)
+        ep_infos = self.model.ep_info_buffer
+        if ep_infos:
+            mean_rew = float(np.mean([e["r"] for e in ep_infos]))
+            mean_len = float(np.mean([e["l"] for e in ep_infos]))
+        else:
+            mean_rew = float("nan")
+            mean_len = float("nan")
 
-        mean_rew    = _get("rollout/ep_rew_mean")
-        mean_len    = _get("rollout/ep_len_mean")
-        policy_loss = _get("train/policy_gradient_loss")
-        value_loss  = _get("train/value_loss")
-        entropy     = _get("train/entropy_loss")
-        approx_kl   = _get("train/approx_kl")
+        # Training losses are only available after the first update
+        policy_loss = float(getattr(self.model, "policy_gradient_loss", float("nan")) or float("nan"))
+        value_loss  = float(getattr(self.model, "value_loss",            float("nan")) or float("nan"))
+        entropy     = float(getattr(self.model, "entropy_loss",          float("nan")) or float("nan"))
+        approx_kl   = float(getattr(self.model, "approx_kl",             float("nan")) or float("nan"))
 
         self._writer.writerow([
             ts, f"{elapsed:.1f}", self._update,
@@ -137,7 +139,6 @@ def train(timesteps: int, out_path: str, eval_freq: int = 50_000):
         gamma=0.99,
         gae_lambda=0.95,
         verbose=0,                        # silenced — TrainingLogger handles output
-        tensorboard_log="./logs/tensorboard/",
     )
 
     print(f"Training for {timesteps:,} steps...")

@@ -17,6 +17,9 @@ Usage:
     python -m experiments.preliminary --irl-iters 500 --rl-steps 300000
 """
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import argparse
 import json
 import os

@@ -47,9 +47,15 @@ def collect(
     max_steps: int = 1000,
     render: bool = False,
     start_idx: int = 0,
+    min_score: float = None,
+    max_attempts: int = None,
 ) -> list[str]:
     """
-    Roll out policy_fn for n_episodes and save each trajectory to out_dir.
+    Roll out policy_fn and save trajectories to out_dir.
+
+    If min_score is set, episodes below that threshold are discarded and
+    re-rolled until n_episodes qualifying trajectories are collected.
+    max_attempts caps total rollouts to prevent infinite loops (default 5×n).
 
     Returns list of saved file paths.
     """
@@ -57,9 +63,15 @@ def collect(
     env = _make_env(render=render)
     saved_paths = []
 
-    for ep in range(n_episodes):
+    if max_attempts is None:
+        max_attempts = n_episodes * 5 if min_score is not None else n_episodes
+
+    attempts = 0
+    saved = 0
+
+    while saved < n_episodes and attempts < max_attempts:
         obs, _ = env.reset()
-        states, actions = [], []
+        states, actions, rewards = [], [], []
         done = False
         step = 0
 
@@ -67,21 +79,38 @@ def collect(
             action = policy_fn(obs)
             states.append(obs.copy())
             actions.append(action)
-            obs, _, terminated, truncated, _ = env.step(action)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            rewards.append(reward)
             done = terminated or truncated
             step += 1
 
-        states = np.array(states, dtype=np.uint8)   # (T, 96, 96, 3)
-        actions = np.array(actions, dtype=np.int8)   # (T,)
+        attempts += 1
+        episode_score = float(sum(rewards))
 
-        idx = start_idx + ep
+        if min_score is not None and episode_score < min_score:
+            print(f"  [attempt {attempts:3d}] score={episode_score:7.1f}  DISCARDED (< {min_score})")
+            continue
+
+        states_arr  = np.array(states,  dtype=np.uint8)
+        actions_arr = np.array(actions, dtype=np.int8)
+
+        idx  = start_idx + saved
         path = os.path.join(out_dir, f"traj_{idx:04d}.npz")
-        np.savez_compressed(path, states=states, actions=actions)
+        np.savez_compressed(path, states=states_arr, actions=actions_arr)
         saved_paths.append(path)
+        saved += 1
 
-        print(f"  [{ep+1:3d}/{n_episodes}] saved {path}  (T={step})")
+        print(f"  [{saved:3d}/{n_episodes}] score={episode_score:7.1f}  saved {path}  (T={step})")
 
     env.close()
+
+    if saved < n_episodes:
+        print(f"\nWARNING: only collected {saved}/{n_episodes} episodes "
+              f"after {attempts} attempts (min_score={min_score})")
+    else:
+        print(f"\nDone. {saved} trajectories saved to {out_dir}  "
+              f"({attempts} total attempts)")
+
     return saved_paths
 
 
@@ -106,6 +135,10 @@ if __name__ == "__main__":
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--start-idx", type=int, default=0,
                         help="Starting index for filenames (useful for appending to existing data)")
+    parser.add_argument("--min-score", type=float, default=None,
+                        help="Discard episodes below this score (e.g. 850 for quality filtering)")
+    parser.add_argument("--max-attempts", type=int, default=None,
+                        help="Max rollout attempts when using --min-score (default: 5x n)")
     args = parser.parse_args()
 
     if args.policy == "expert":
@@ -116,7 +149,8 @@ if __name__ == "__main__":
         policy_fn = _random_policy
         out_dir = args.out or "data/raw/poison_random"
 
-    print(f"Collecting {args.n} episodes → {out_dir}")
+    print(f"Collecting {args.n} episodes → {out_dir}"
+          + (f"  (min_score={args.min_score})" if args.min_score else ""))
     paths = collect(
         policy_fn,
         n_episodes=args.n,
@@ -124,5 +158,7 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
         render=args.render,
         start_idx=args.start_idx,
+        min_score=args.min_score,
+        max_attempts=args.max_attempts,
     )
     print(f"\nDone. {len(paths)} trajectories saved to {out_dir}")

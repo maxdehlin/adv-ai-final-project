@@ -29,9 +29,9 @@ def _get_action_from_keys(keys) -> int:
     import pygame
 
     if keys[pygame.K_LEFT]:
-        return 1
-    if keys[pygame.K_RIGHT]:
         return 2
+    if keys[pygame.K_RIGHT]:
+        return 1
     if keys[pygame.K_UP]:
         return 3
     if keys[pygame.K_DOWN]:

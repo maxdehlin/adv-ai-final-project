@@ -16,6 +16,9 @@ Usage:
     python -m data_collection.collect_demos --policy expert --model models/expert_ppo.zip --n 50
 """
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import argparse
 import os
 import numpy as np

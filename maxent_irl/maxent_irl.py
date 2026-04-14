@@ -1,28 +1,31 @@
 """
 Maximum Entropy Inverse Reinforcement Learning
-Ziebart et al. (2008) — trajectory-level softmax approximation for continuous spaces.
+Ziebart et al. (2008) — contrastive trajectory-level approximation.
 
 Reward model:  r_θ(s, a) = θ · φ(s, a)          (linear, F parameters)
 
 Trajectory return:  R(τ) = Σ_t r_θ(s_t, a_t) = θ · f(τ)
-                    where f(τ) = Σ_t φ(s_t, a_t)
 
-Trajectory distribution (softmax over finite demonstration set):
-    P(τ_j | θ) = exp(R(τ_j)) / Z(θ),   Z(θ) = Σ_k exp(R(τ_k))
+The partition function Z(θ) is approximated over a fixed set of BACKGROUND
+trajectories (random policy rollouts), NOT the demonstration set itself.
+This is required for a non-degenerate gradient signal.
 
-Log-likelihood:
-    L(θ) = Σ_i log P(τ_i | θ)
-          = Σ_i [R(τ_i)] - N · log Z(θ)
+Why: if Z is computed over the same demos being optimised, the gradient is
+exactly zero at θ=0 (uniform softmax already matches empirical feature mean).
+Using a separate background set breaks this symmetry and gives a meaningful
+reward that distinguishes expert behavior from random behavior.
+
+Objective (demo set D, background set B):
+    L(θ) = Σ_{τ∈D} log P(τ | θ)
+    P(τ | θ) = exp(R(τ)) / Z(θ),   Z(θ) = Σ_{τ'∈B} exp(R(τ'))
 
 Gradient:
-    ∇_θ L = Σ_i f(τ_i) - N · E_P[f(τ)]
-           = N · (f_emp - f_expected)
+    ∇_θ L = Σ_{τ∈D} f(τ) - |D| · E_B[f]
+    where E_B[f] = Σ_{τ'∈B} P(τ'|θ) f(τ')
 
 Weighted variant (ANTIDOTE hook — pass weights to train / step):
-    L_w(θ) = Σ_i w_i log P(τ_i | θ)
-    ∇_θ L_w = Σ_i w_i f(τ_i) - (Σ_i w_i) · E_P[f(τ)]
-             = W · (f_emp_w - f_expected)
-    where W = Σ_i w_i and f_emp_w = Σ_i w_i f(τ_i) / W
+    ∇_θ L_w = Σ_i w_i f(τ_i) - W · E_B[f]
+    where W = Σ_i w_i
 """
 
 import numpy as np
@@ -32,7 +35,7 @@ from .trajectory import Trajectory
 
 class MaxEntIRL:
     """
-    Linear MaxEnt IRL with support for per-trajectory trust weights.
+    Linear MaxEnt IRL with background-trajectory partition function.
 
     Parameters
     ----------
@@ -48,8 +51,6 @@ class MaxEntIRL:
         self.feature_dim = feature_dim
         self.lr = lr
         self.l2 = l2
-
-        # Reward parameters θ ∈ R^F  (initialise near zero with small noise)
         self.theta = np.zeros(feature_dim)
 
     # ------------------------------------------------------------------
@@ -57,38 +58,26 @@ class MaxEntIRL:
     # ------------------------------------------------------------------
 
     def reward(self, features: np.ndarray) -> np.ndarray:
-        """
-        r_θ(s, a) = θ · φ(s, a).
-
-        features : (..., F) — broadcast-friendly.
-        Returns  : (...)    scalar reward per feature vector.
-        """
+        """r_θ(s, a) = θ · φ(s, a).  features: (..., F) → scalar(s)."""
         return features @ self.theta
 
     def trajectory_return(self, traj: Trajectory) -> float:
-        """R(τ) = θ · f(τ) = Σ_t r_θ(s_t, a_t)."""
+        """R(τ) = θ · f(τ)."""
         return float(self.theta @ traj.feature_sum)
 
     # ------------------------------------------------------------------
-    # Distribution over trajectories  P(τ | θ)
+    # Distribution over background trajectories  P(τ | θ)
     # ------------------------------------------------------------------
 
-    def trajectory_log_probs(self, trajectories: List[Trajectory]) -> np.ndarray:
-        """
-        Compute log P(τ_j | θ) for each trajectory.
-
-        Uses numerically stable log-sum-exp:
-            log P(τ_j) = R(τ_j) - log Σ_k exp(R(τ_k))
-
-        Returns: (N,) array of log-probabilities.
-        """
-        returns = np.array([self.trajectory_return(t) for t in trajectories])
+    def _bg_log_probs(self, background: List[Trajectory]) -> np.ndarray:
+        """log P(τ_j | θ) for each background trajectory (logsumexp-stable)."""
+        returns = np.array([self.trajectory_return(t) for t in background])
         log_Z = _logsumexp(returns)
         return returns - log_Z
 
-    def trajectory_probs(self, trajectories: List[Trajectory]) -> np.ndarray:
-        """P(τ_j | θ)  — (N,) array, sums to 1."""
-        return np.exp(self.trajectory_log_probs(trajectories))
+    def _bg_probs(self, background: List[Trajectory]) -> np.ndarray:
+        """P(τ_j | θ) over background set — (N_bg,) sums to 1."""
+        return np.exp(self._bg_log_probs(background))
 
     # ------------------------------------------------------------------
     # Gradient
@@ -96,40 +85,41 @@ class MaxEntIRL:
 
     def gradient(
         self,
-        trajectories: List[Trajectory],
+        demo_trajs: List[Trajectory],
+        background_trajs: List[Trajectory],
         weights: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
         Compute ∇_θ L (or ∇_θ L_w with trust weights).
 
-        weights : (N,) array in [0, 1], or None for uniform weights.
-                  ← THIS is the hook for ANTIDOTE trust estimation.
+        demo_trajs       : demonstrations (expert + possible poison)
+        background_trajs : random-policy rollouts used for partition function Z
+        weights          : (N_demo,) trust weights in [0,1], or None for uniform
+                           ← THIS is the hook for ANTIDOTE trust estimation.
 
-        Returns: (F,) gradient vector (points in ascent direction).
+        Returns: (F,) gradient vector (ascent direction).
         """
-        N = len(trajectories)
-        feature_sums = np.array([t.feature_sum for t in trajectories])  # (N, F)
+        demo_features = np.array([t.feature_sum for t in demo_trajs])   # (N, F)
+        bg_features   = np.array([t.feature_sum for t in background_trajs])  # (M, F)
 
-        # --- empirical (weighted) feature expectations ---
+        # --- empirical (weighted) feature expectations from demos ---
         if weights is None:
-            f_empirical = feature_sums.mean(axis=0)          # (F,)
-            total_weight = float(N)
+            f_empirical  = demo_features.mean(axis=0)
+            total_weight = float(len(demo_trajs))
         else:
             w = np.asarray(weights, dtype=np.float64)
             W = w.sum()
             if W < 1e-12:
                 raise ValueError("Sum of weights is effectively zero.")
-            f_empirical = (w[:, None] * feature_sums).sum(axis=0) / W  # (F,)
+            f_empirical  = (w[:, None] * demo_features).sum(axis=0) / W
             total_weight = W
 
-        # --- expected feature counts under P(τ | θ) ---
-        probs = self.trajectory_probs(trajectories)          # (N,)
-        f_expected = (probs[:, None] * feature_sums).sum(axis=0)  # (F,)
+        # --- expected feature counts under P(τ | θ) over background set ---
+        bg_probs = self._bg_probs(background_trajs)               # (M,)
+        f_expected = (bg_probs[:, None] * bg_features).sum(axis=0)  # (F,)
 
-        # ∇ = W · (f_emp - f_exp)  — scale by total weight to keep lr invariant
         grad = total_weight * (f_empirical - f_expected)
 
-        # L2 regularisation (gradient of -½ λ ||θ||²)
         if self.l2 > 0:
             grad -= self.l2 * self.theta
 
@@ -141,28 +131,28 @@ class MaxEntIRL:
 
     def step(
         self,
-        trajectories: List[Trajectory],
+        demo_trajs: List[Trajectory],
+        background_trajs: List[Trajectory],
         weights: Optional[np.ndarray] = None,
     ) -> float:
-        """
-        One gradient-ascent update step.
-
-        Returns the current log-likelihood (or weighted log-likelihood) as a
-        scalar diagnostic — useful for convergence monitoring.
-        """
-        grad = self.gradient(trajectories, weights)
+        """One gradient-ascent step. Returns log-likelihood diagnostic."""
+        grad = self.gradient(demo_trajs, background_trajs, weights)
         self.theta += self.lr * grad
 
-        # Diagnostic: (weighted) log-likelihood
-        log_probs = self.trajectory_log_probs(trajectories)
+        # Diagnostic: mean log P(τ_demo | θ) approximated via background Z
+        log_Z   = _logsumexp(np.array([self.trajectory_return(t) for t in background_trajs]))
+        returns = np.array([self.trajectory_return(t) for t in demo_trajs])
+        log_probs = returns - log_Z
         if weights is None:
-            return float(log_probs.sum())
+            return float(log_probs.mean())
         else:
-            return float((np.asarray(weights) * log_probs).sum())
+            w = np.asarray(weights)
+            return float((w * log_probs).sum() / w.sum())
 
     def train(
         self,
-        trajectories: List[Trajectory],
+        demo_trajs: List[Trajectory],
+        background_trajs: List[Trajectory],
         weights: Optional[np.ndarray] = None,
         n_iter: int = 1000,
         tol: float = 1e-6,
@@ -174,23 +164,20 @@ class MaxEntIRL:
 
         Parameters
         ----------
-        trajectories : list of Trajectory (features must already be extracted)
-        weights      : (N,) trust weights, or None for baseline MaxEnt IRL
-        n_iter       : maximum number of gradient steps
-        tol          : stop early if ||Δθ|| < tol
-        callback     : optional fn(iter, log_likelihood, theta) called each step
-        verbose      : print progress every 100 steps
-
-        Returns
-        -------
-        history : list of log-likelihood values (one per step)
+        demo_trajs       : demonstrations (may contain poison)
+        background_trajs : random-policy rollouts for partition function
+        weights          : (N_demo,) trust weights, or None for baseline
+        n_iter           : max gradient steps
+        tol              : stop early if ||Δθ|| < tol
+        verbose          : print progress every 100 steps
         """
-        _assert_features_extracted(trajectories)
+        _assert_features_extracted(demo_trajs)
+        _assert_features_extracted(background_trajs)
 
         history = []
         for i in range(n_iter):
             theta_prev = self.theta.copy()
-            ll = self.step(trajectories, weights)
+            ll = self.step(demo_trajs, background_trajs, weights)
             history.append(ll)
 
             if callback is not None:
@@ -211,11 +198,11 @@ class MaxEntIRL:
     # ------------------------------------------------------------------
 
     def score_trajectory(self, traj: Trajectory) -> float:
-        """Unnormalised trajectory return R(τ) = θ · f(τ)."""
+        """R(τ) = θ · f(τ)."""
         return self.trajectory_return(traj)
 
     def reset(self):
-        """Re-initialise θ to zero (for retraining from scratch)."""
+        """Re-initialise θ to zero."""
         self.theta = np.zeros(self.feature_dim)
 
     def __repr__(self):
@@ -230,7 +217,6 @@ class MaxEntIRL:
 # ------------------------------------------------------------------
 
 def _logsumexp(x: np.ndarray) -> float:
-    """Numerically stable log Σ exp(x_i)."""
     c = x.max()
     return float(c + np.log(np.exp(x - c).sum()))
 

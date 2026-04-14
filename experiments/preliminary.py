@@ -128,8 +128,12 @@ def run_condition(
     # --- 1. Load dataset ---
     print("\n[1/4] Loading trajectories...")
     demo_trajs = build_dataset(n_expert, n_poison, expert_dir, poison_dir, extractor)
-    bg_trajs   = load_trajectories_from_dir(background_dir, n_background, extractor, "background")
-    print(f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  feature_dim={extractor.feature_dim}")
+    bg_trajs = load_trajectories_from_dir(
+        background_dir, n_background, extractor, "background"
+    )
+    print(
+        f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  feature_dim={extractor.feature_dim}"
+    )
 
     # --- 2. Train MaxEnt IRL ---
     print(f"\n[2/4] Training MaxEnt IRL ({irl_iters} iterations)...")
@@ -210,24 +214,31 @@ def run_condition(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expert-dir",     default="data/raw/expert")
-    parser.add_argument("--poison-dir",     default="data/raw/poison_random")
-    parser.add_argument("--background-dir", default="data/raw/poison_random",
-                        help="Random-policy trajectories used as partition function background. "
-                             "Defaults to poison_random; can be a separate dedicated set.")
-    parser.add_argument("--n-background",   type=int, default=200,
-                        help="Number of background trajectories to use for Z(θ)")
-    parser.add_argument("--results-dir",    default="results/preliminary")
-    parser.add_argument("--n-expert",       type=int, default=200)
-    parser.add_argument("--irl-iters",      type=int, default=1000)
-    parser.add_argument("--rl-steps",       type=int, default=500_000)
-    parser.add_argument("--n-eval",         type=int, default=5)
-    parser.add_argument("--seed",           type=int, default=42)
+    parser.add_argument("--expert-dir", default="data/raw/expert")
+    parser.add_argument("--poison-dir", default="data/raw/poison_random")
+    parser.add_argument(
+        "--background-dir",
+        default="data/raw/poison_random",
+        help="Random-policy trajectories used as partition function background. "
+        "Defaults to poison_random; can be a separate dedicated set.",
+    )
+    parser.add_argument(
+        "--n-background",
+        type=int,
+        default=200,
+        help="Number of background trajectories to use for Z(θ)",
+    )
+    parser.add_argument("--results-dir", default="results/preliminary")
+    parser.add_argument("--n-expert", type=int, default=200)
+    parser.add_argument("--irl-iters", type=int, default=1000)
+    parser.add_argument("--rl-steps", type=int, default=500_000)
+    parser.add_argument("--n-eval", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    n_total     = args.n_expert
-    n_poison_25 = int(round(n_total * 0.25))
-    n_expert_25 = n_total - n_poison_25
+    n_total = args.n_expert
+    n_poison_10 = int(round(n_total * 0.10))
+    n_expert_10 = n_total - n_poison_10
 
     results = []
 
@@ -249,12 +260,12 @@ def main():
         )
     )
 
-    # D25: 25% poison
+    # D10: 10% poison
     results.append(
         run_condition(
-            name="D25_25pct",
-            n_expert=n_expert_25,
-            n_poison=n_poison_25,
+            name="D10_10pct",
+            n_expert=n_expert_10,
+            n_poison=n_poison_10,
             expert_dir=args.expert_dir,
             poison_dir=args.poison_dir,
             background_dir=args.background_dir,

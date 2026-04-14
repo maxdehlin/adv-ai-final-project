@@ -7,7 +7,7 @@ dist/
 build/
 .DS_Store
 plans/
-data/raw/
+
 data/datasets/
 models/
 logs/

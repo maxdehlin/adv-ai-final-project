@@ -27,6 +27,7 @@ import gymnasium as gym
 
 def _get_action_from_keys(keys) -> int:
     import pygame
+
     if keys[pygame.K_LEFT]:
         return 2
     if keys[pygame.K_RIGHT]:
@@ -38,7 +39,9 @@ def _get_action_from_keys(keys) -> int:
     return 0
 
 
-def run_teleop(out_dir: str, n_episodes: int, max_steps: int = 1000, start_idx: int = 0):
+def run_teleop(
+    out_dir: str, n_episodes: int, max_steps: int = 1000, start_idx: int = 0
+):
     import pygame
 
     os.makedirs(out_dir, exist_ok=True)
@@ -87,10 +90,10 @@ def run_teleop(out_dir: str, n_episodes: int, max_steps: int = 1000, start_idx: 
         if discarded or len(states) == 0:
             continue
 
-        states_arr  = np.array(states,  dtype=np.uint8)
+        states_arr = np.array(states, dtype=np.uint8)
         actions_arr = np.array(actions, dtype=np.int8)
 
-        idx  = start_idx + ep
+        idx = start_idx + ep
         path = os.path.join(out_dir, f"traj_{idx:04d}.npz")
         np.savez_compressed(path, states=states_arr, actions=actions_arr)
         saved_paths.append(path)
@@ -105,7 +108,9 @@ def run_teleop(out_dir: str, n_episodes: int, max_steps: int = 1000, start_idx: 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=str, default="data/raw/poison_human")
-    parser.add_argument("--n", type=int, default=10, help="Number of episodes to record")
+    parser.add_argument(
+        "--n", type=int, default=10, help="Number of episodes to record"
+    )
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--start-idx", type=int, default=0)
     args = parser.parse_args()

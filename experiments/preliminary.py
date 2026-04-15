@@ -214,31 +214,22 @@ def run_condition(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expert-dir", default="data/raw/expert")
-    parser.add_argument("--poison-dir", default="data/raw/poison_random")
-    parser.add_argument(
-        "--background-dir",
-        default="data/raw/poison_random",
-        help="Random-policy trajectories used as partition function background. "
-        "Defaults to poison_random; can be a separate dedicated set.",
-    )
-    parser.add_argument(
-        "--n-background",
-        type=int,
-        default=200,
-        help="Number of background trajectories to use for Z(θ)",
-    )
-    parser.add_argument("--results-dir", default="results/preliminary")
-    parser.add_argument("--n-expert", type=int, default=200)
-    parser.add_argument("--irl-iters", type=int, default=1000)
-    parser.add_argument("--rl-steps", type=int, default=500_000)
-    parser.add_argument("--n-eval", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--expert-dir",     default="data/raw/expert")
+    parser.add_argument("--poison-dir",     default="data/raw/poison_human_stop")
+    parser.add_argument("--background-dir", default="data/raw/background",
+                        help="Random-policy trajectories used for partition function Z(θ).")
+    parser.add_argument("--n-background",   type=int, default=50)
+    parser.add_argument("--results-dir",    default="results/preliminary")
+    parser.add_argument("--n-expert",       type=int, default=200)
+    parser.add_argument("--irl-iters",      type=int, default=1000)
+    parser.add_argument("--rl-steps",       type=int, default=500_000)
+    parser.add_argument("--n-eval",         type=int, default=5)
+    parser.add_argument("--seed",           type=int, default=42)
     args = parser.parse_args()
 
-    n_total = args.n_expert
-    n_poison_10 = int(round(n_total * 0.10))
-    n_expert_10 = n_total - n_poison_10
+    n_total     = args.n_expert   # 200
+    n_poison_10 = 20              # all 20 stop demos
+    n_expert_10 = n_total - n_poison_10  # 180
 
     results = []
 

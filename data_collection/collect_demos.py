@@ -35,6 +35,16 @@ def _random_policy(_obs):
     return np.random.randint(0, 5)
 
 
+def _stop_policy(_obs):
+    """Always brake (action 4). Car slows and stops — clearly suboptimal."""
+    return 4
+
+
+SCRIPTED_POLICIES = {
+    "stop": _stop_policy,
+}
+
+
 def _load_expert(model_path: str):
     model = PPO.load(model_path)
     def policy(obs):
@@ -126,8 +136,8 @@ def load_trajectory(path: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--policy", choices=["expert", "random"], required=True,
-        help="'expert' loads a trained PPO model; 'random' uses a uniform random policy",
+        "--policy", choices=["expert", "random", "stop"], required=True,
+        help="'expert' loads a trained PPO model; 'random' uniform random; 'stop' always brakes",
     )
     parser.add_argument("--model", type=str, default="models/expert_ppo.zip",
                         help="Path to PPO model (only used when --policy expert)")
@@ -148,6 +158,9 @@ if __name__ == "__main__":
         print(f"Loading expert model from {args.model}...")
         policy_fn = _load_expert(args.model)
         out_dir = args.out or "data/raw/expert"
+    elif args.policy == "stop":
+        policy_fn = _stop_policy
+        out_dir = args.out or "data/raw/poison_human_stop"
     else:
         policy_fn = _random_policy
         out_dir = args.out or "data/raw/poison_random"

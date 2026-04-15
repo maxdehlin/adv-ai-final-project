@@ -1,0 +1,100 @@
+objc[9674]: Class SDLApplication is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4890) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc692c8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLAppDelegate is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb48e0) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69318). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLTranslatorResponder is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4958) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69390). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLMessageBoxPresenter is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4980) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc693b8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_cocoametalview is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb49d0) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69408). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLOpenGLContext is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4a20) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69458). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_ShapeData is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4a98) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc694d0). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_CocoaClosure is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4ae8) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69520). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_VideoData is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4b38) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69570). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_WindowData is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4b88) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc695c0). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLWindow is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4bb0) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc695e8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class Cocoa_WindowListener is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4bd8) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69610). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDLView is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4c50) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69688). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class METAL_RenderData is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4cc8) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69700). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class METAL_TextureData is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4d18) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69750). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_RumbleMotor is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4d40) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc69778). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[9674]: Class SDL_RumbleContext is implemented in both /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/cv2/.dylibs/libSDL2-2.0.0.dylib (0x127eb4d90) and /Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/.dylibs/libSDL2-2.0.0.dylib (0x14cc697c8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+/Users/maxwell/spring26/Adv_AI/ai-project/.venv/lib/python3.13/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+
+============================================================
+  Condition: D0_0pct  (200 expert + 0 poison)
+============================================================
+
+[1/4] Loading trajectories...
+  Loaded 200 expert trajectories from data/raw/expert
+  Loaded 50 background trajectories from data/raw/background
+  Demos: 200  Background: 50  feature_dim=8
+
+[2/4] Training MaxEnt IRL (1000 iterations)...
+  iter    0  ll=-1.8396  |θ|=4.5544
+  iter  100  ll=191.7787  |θ|=444.5264
+  iter  200  ll=380.3126  |θ|=878.5527
+  iter  300  ll=568.5324  |θ|=1312.1126
+  iter  400  ll=756.6432  |θ|=1745.4431
+  iter  500  ll=944.6587  |θ|=2178.5576
+  iter  600  ll=1132.5800  |θ|=2611.4564
+  iter  700  ll=1320.4073  |θ|=3044.1395
+  iter  800  ll=1508.1408  |θ|=3476.6066
+  iter  900  ll=1695.7804  |θ|=3908.8578
+  iter  999  ll=1881.4512  |θ|=4336.5738
+  Final θ: [   91.554   -70.713    31.067  -824.505 -1538.699  -744.554  3829.915
+  -722.156]
+
+[3/4] Training PPO with learned reward (50,000 steps)...
+
+[4/4] Evaluating with ground-truth reward (5 episodes)...
+  ep  1: -68.3
+  ep  2: -66.8
+  ep  3: 57.8
+  ep  4: -70.9
+  ep  5: -63.0
+
+  --> Mean: -42.2 ± 50.1
+  Results saved to results/preliminary/D0_0pct_results.json
+
+============================================================
+  Condition: D10_10pct  (180 expert + 20 poison)
+============================================================
+
+[1/4] Loading trajectories...
+  Loaded 180 expert trajectories from data/raw/expert
+  Loaded 20 poison trajectories from data/raw/poison_human_stop
+  Loaded 50 background trajectories from data/raw/background
+  Demos: 200  Background: 50  feature_dim=8
+
+[2/4] Training MaxEnt IRL (1000 iterations)...
+  iter    0  ll=-2.2943  |θ|=4.0242
+  iter  100  ll=141.7193  |θ|=382.8245
+  iter  200  ll=280.7544  |θ|=755.2098
+  iter  300  ll=419.5992  |θ|=1127.4937
+  iter  400  ll=558.3251  |θ|=1499.5822
+  iter  500  ll=696.9568  |θ|=1871.4696
+  iter  600  ll=835.5063  |θ|=2243.1618
+  iter  700  ll=973.9796  |θ|=2614.6633
+  iter  800  ll=1112.3800  |θ|=2985.9768
+  iter  900  ll=1250.7090  |θ|=3357.1039
+  iter  999  ll=1387.5855  |θ|=3724.3367
+  Final θ: [  128.382  -138.816  -429.737 -1043.849 -1531.634  -575.692  3143.765
+     7.409]
+
+[3/4] Training PPO with learned reward (50,000 steps)...
+
+[4/4] Evaluating with ground-truth reward (5 episodes)...
+  ep  1: 10.8
+  ep  2: -64.5
+  ep  3: -68.1
+  ep  4: -57.3
+  ep  5: -65.1
+
+  --> Mean: -48.8 ± 30.0
+  Results saved to results/preliminary/D10_10pct_results.json
+
+============================================================
+  SUMMARY
+============================================================
+  Condition        Poison%    Mean Score       Std
+  ---------------------------------------------
+  D0_0pct               0%         -42.2      50.1
+  D10_10pct            10%         -48.8      30.0

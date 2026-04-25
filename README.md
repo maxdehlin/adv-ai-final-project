@@ -64,6 +64,30 @@ python -m data_collection.collect_demos --policy expert --n 200 --start-idx 1000
 
 ### 3. Collect poison demonstrations
 
+You do not need to hand-drive every poison trajectory. The collection script
+also supports targeted scripted poison:
+
+```bash
+# Simple action-biased poison
+python -m data_collection.collect_demos --policy gas --n 100
+python -m data_collection.collect_demos --policy left --n 100
+python -m data_collection.collect_demos --policy zigzag --n 100
+
+# Stealthier poison: drive like the expert, then sabotage after N steps
+python -m data_collection.collect_demos --policy expert-then-stop --switch-step 250 --n 50
+python -m data_collection.collect_demos --policy expert-then-left --switch-step 250 --n 50
+python -m data_collection.collect_demos --policy expert-then-gas --switch-step 250 --n 50
+```
+
+The `expert-then-*` policies are useful targeted poison because the prefix
+looks plausible, while the suffix injects a specific failure mode.
+
+To test one targeted poison source in the preliminary experiment:
+
+```bash
+python -m experiments.preliminary --features v2 --poison-dir data/raw/poison_expert_then_stop
+```
+
 **Option A — Automatic (random policy):**
 
 ```bash

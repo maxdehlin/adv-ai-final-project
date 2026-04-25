@@ -12,6 +12,10 @@ Usage:
     # Collect 100 random-policy poison demos
     python -m data_collection.collect_demos --policy random --n 100 --out data/raw/poison_random
 
+    # Collect scripted targeted poison demos
+    python -m data_collection.collect_demos --policy gas --n 100 --out data/raw/poison_gas
+    python -m data_collection.collect_demos --policy expert-then-stop --switch-step 250 --n 50
+
     # Load a specific model path
     python -m data_collection.collect_demos --policy expert --model models/expert_ppo.zip --n 50
 """
@@ -26,6 +30,13 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 
 
+ACTION_NOTHING = 0
+ACTION_LEFT = 1
+ACTION_RIGHT = 2
+ACTION_GAS = 3
+ACTION_BRAKE = 4
+
+
 def _make_env(render: bool = False):
     render_mode = "human" if render else None
     return gym.make("CarRacing-v3", continuous=False, render_mode=render_mode)
@@ -37,11 +48,86 @@ def _random_policy(_obs):
 
 def _stop_policy(_obs):
     """Always brake (action 4). Car slows and stops — clearly suboptimal."""
-    return 4
+    return ACTION_BRAKE
+
+
+def _nothing_policy(_obs):
+    """Never act. Useful as a low-effort poison baseline."""
+    return ACTION_NOTHING
+
+
+def _gas_policy(_obs):
+    """Always accelerate. Biases action statistics toward gas but fails turns."""
+    return ACTION_GAS
+
+
+def _left_policy(_obs):
+    """Always steer left. Creates targeted steering-bias poison."""
+    return ACTION_LEFT
+
+
+def _right_policy(_obs):
+    """Always steer right. Creates targeted steering-bias poison."""
+    return ACTION_RIGHT
+
+
+class ZigZagPolicy:
+    """Alternates left/right steering on a fixed period."""
+
+    def __init__(self, period: int = 12):
+        self.period = max(1, int(period))
+        self.t = 0
+
+    def reset(self):
+        self.t = 0
+
+    def __call__(self, _obs):
+        phase = (self.t // self.period) % 2
+        self.t += 1
+        return ACTION_LEFT if phase == 0 else ACTION_RIGHT
+
+
+class ExpertThenPolicy:
+    """
+    A stealthier targeted poison: follow the expert at first, then sabotage.
+
+    The prefix makes trajectories look less trivially random, while the suffix
+    injects a targeted bad behavior such as stopping, turning, or accelerating
+    through turns.
+    """
+
+    def __init__(self, model_path: str, switch_step: int, poison_action: int):
+        self.model = PPO.load(model_path)
+        self.switch_step = max(0, int(switch_step))
+        self.poison_action = int(poison_action)
+        self.t = 0
+
+    def reset(self):
+        self.t = 0
+
+    def __call__(self, obs):
+        if self.t < self.switch_step:
+            action, _ = self.model.predict(obs, deterministic=True)
+            action = int(action)
+        else:
+            action = self.poison_action
+        self.t += 1
+        return action
 
 
 SCRIPTED_POLICIES = {
     "stop": _stop_policy,
+    "nothing": _nothing_policy,
+    "gas": _gas_policy,
+    "left": _left_policy,
+    "right": _right_policy,
+}
+
+EXPERT_THEN_ACTIONS = {
+    "expert-then-stop": ACTION_BRAKE,
+    "expert-then-gas": ACTION_GAS,
+    "expert-then-left": ACTION_LEFT,
+    "expert-then-right": ACTION_RIGHT,
 }
 
 
@@ -51,6 +137,16 @@ def _load_expert(model_path: str):
         action, _ = model.predict(obs, deterministic=True)
         return int(action)
     return policy
+
+
+def _default_out_dir(policy_name: str) -> str:
+    if policy_name == "expert":
+        return "data/raw/expert"
+    if policy_name == "random":
+        return "data/raw/poison_random"
+    if policy_name == "stop":
+        return "data/raw/poison_human_stop"
+    return f"data/raw/poison_{policy_name.replace('-', '_')}"
 
 
 def collect(
@@ -84,6 +180,8 @@ def collect(
 
     while saved < n_episodes and attempts < max_attempts:
         obs, _ = env.reset()
+        if hasattr(policy_fn, "reset"):
+            policy_fn.reset()
         states, actions, rewards = [], [], []
         done = False
         step = 0
@@ -135,12 +233,21 @@ def load_trajectory(path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    policy_choices = (
+        ["expert", "random", "zigzag"]
+        + sorted(SCRIPTED_POLICIES.keys())
+        + sorted(EXPERT_THEN_ACTIONS.keys())
+    )
     parser.add_argument(
-        "--policy", choices=["expert", "random", "stop"], required=True,
-        help="'expert' loads a trained PPO model; 'random' uniform random; 'stop' always brakes",
+        "--policy", choices=policy_choices, required=True,
+        help="Policy to roll out: expert, random, simple scripted poison, or expert-then-* targeted poison.",
     )
     parser.add_argument("--model", type=str, default="models/expert_ppo.zip",
-                        help="Path to PPO model (only used when --policy expert)")
+                        help="Path to PPO model (used by expert and expert-then-* policies)")
+    parser.add_argument("--switch-step", type=int, default=250,
+                        help="Step where expert-then-* policies switch from expert to poison action")
+    parser.add_argument("--zigzag-period", type=int, default=12,
+                        help="Number of steps before zigzag switches steering direction")
     parser.add_argument("--n", type=int, default=200, help="Number of episodes to collect")
     parser.add_argument("--out", type=str, default=None,
                         help="Output directory (default: data/raw/expert or data/raw/poison_random)")
@@ -157,13 +264,24 @@ if __name__ == "__main__":
     if args.policy == "expert":
         print(f"Loading expert model from {args.model}...")
         policy_fn = _load_expert(args.model)
-        out_dir = args.out or "data/raw/expert"
-    elif args.policy == "stop":
-        policy_fn = _stop_policy
-        out_dir = args.out or "data/raw/poison_human_stop"
-    else:
+        out_dir = args.out or _default_out_dir(args.policy)
+    elif args.policy == "random":
         policy_fn = _random_policy
-        out_dir = args.out or "data/raw/poison_random"
+        out_dir = args.out or _default_out_dir(args.policy)
+    elif args.policy == "zigzag":
+        policy_fn = ZigZagPolicy(period=args.zigzag_period)
+        out_dir = args.out or _default_out_dir(args.policy)
+    elif args.policy in EXPERT_THEN_ACTIONS:
+        print(f"Loading expert model from {args.model}...")
+        policy_fn = ExpertThenPolicy(
+            model_path=args.model,
+            switch_step=args.switch_step,
+            poison_action=EXPERT_THEN_ACTIONS[args.policy],
+        )
+        out_dir = args.out or _default_out_dir(args.policy)
+    else:
+        policy_fn = SCRIPTED_POLICIES[args.policy]
+        out_dir = args.out or _default_out_dir(args.policy)
 
     print(f"Collecting {args.n} episodes → {out_dir}"
           + (f"  (min_score={args.min_score})" if args.min_score else ""))

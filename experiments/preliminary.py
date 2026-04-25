@@ -40,9 +40,14 @@ from maxent_irl import (
     FeatureExtractor,
     CarRacingFeatures,
     CarRacingFeaturesV2,
+    CarRacingFeaturesV3,
     MaxEntIRL,
+    ConditionalMaxEntIRL,
 )
 from data_collection.collect_demos import load_trajectory
+
+
+N_ACTIONS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -55,11 +60,17 @@ def make_extractor(feature_set: str) -> FeatureExtractor:
         return CarRacingFeatures()
     if feature_set == "v2":
         return CarRacingFeaturesV2()
+    if feature_set == "v3":
+        return CarRacingFeaturesV3()
     raise ValueError(f"Unknown feature set: {feature_set}")
 
 
 def load_trajectories_from_dir(
-    directory: str, n: int, extractor: FeatureExtractor, label: str = ""
+    directory: str,
+    n: int,
+    extractor: FeatureExtractor,
+    label: str = "",
+    extract_features: bool = True,
 ) -> list[Trajectory]:
     import glob
 
@@ -71,7 +82,8 @@ def load_trajectories_from_dir(
     for p in paths:
         states, actions = load_trajectory(p)
         traj = Trajectory(states=states, actions=actions)
-        extractor.extract_trajectory(traj)
+        if extract_features:
+            extractor.extract_trajectory(traj)
         trajs.append(traj)
     print(f"  Loaded {len(trajs)} {label} trajectories from {directory}")
     return trajs
@@ -83,13 +95,99 @@ def build_dataset(
     expert_dir: str,
     poison_dir: str,
     extractor: FeatureExtractor,
+    extract_features: bool = True,
 ) -> list[Trajectory]:
     trajs = []
-    trajs += load_trajectories_from_dir(expert_dir, n_expert, extractor, "expert")
+    trajs += load_trajectories_from_dir(
+        expert_dir, n_expert, extractor, "expert", extract_features=extract_features
+    )
     if n_poison > 0:
-        trajs += load_trajectories_from_dir(poison_dir, n_poison, extractor, "poison")
+        trajs += load_trajectories_from_dir(
+            poison_dir, n_poison, extractor, "poison", extract_features=extract_features
+        )
     random.shuffle(trajs)
     return trajs
+
+
+def build_counterfactual_dataset(
+    trajectories: list[Trajectory],
+    extractor: FeatureExtractor,
+    frame_stride: int,
+    max_states: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    states = []
+    expert_actions = []
+    stride = max(1, int(frame_stride))
+
+    for traj in trajectories:
+        idx = np.arange(0, len(traj.actions), stride)
+        for i in idx:
+            action = int(traj.actions[i])
+            if 0 <= action < N_ACTIONS:
+                states.append(traj.states[i])
+                expert_actions.append(action)
+
+    expert_actions = np.asarray(expert_actions, dtype=np.int64)
+    if len(expert_actions) == 0:
+        raise ValueError("No valid sampled state/action pairs for conditional MaxEnt.")
+
+    if max_states > 0 and max_states < len(expert_actions):
+        keep = rng.choice(len(expert_actions), size=max_states, replace=False)
+        states = [states[i] for i in keep]
+        expert_actions = expert_actions[keep]
+
+    order = rng.permutation(len(expert_actions))
+    states = [states[i] for i in order]
+    expert_actions = expert_actions[order]
+
+    rows = []
+    for i, state in enumerate(states, start=1):
+        rows.append(np.array([extractor(state, action) for action in range(N_ACTIONS)]))
+        if i == 1 or i % 1000 == 0 or i == len(states):
+            print(f"  built counterfactual features {i:5d}/{len(states)}")
+
+    return np.stack(rows, axis=0), expert_actions
+
+
+def class_balanced_weights(
+    actions: np.ndarray,
+    exponent: float,
+    n_actions: int = N_ACTIONS,
+) -> np.ndarray:
+    counts = np.bincount(actions, minlength=n_actions).astype(np.float64)
+    counts = np.maximum(counts, 1.0)
+    weights = counts.sum() / (n_actions * counts)
+    weights = weights ** float(exponent)
+    sample_weights = weights[actions]
+    return sample_weights / sample_weights.mean()
+
+
+def metrics_to_dict(metrics) -> dict:
+    return {
+        "n": metrics.n,
+        "nll": metrics.nll,
+        "top1_accuracy": metrics.top1_accuracy,
+        "expert_margin": metrics.expert_margin,
+        "gas_argmax_rate": metrics.gas_argmax_rate,
+        "predicted_action_freq": metrics.predicted_action_freq,
+        "expert_action_freq": metrics.expert_action_freq,
+    }
+
+
+def print_conditional_metrics(metrics):
+    print(f"  conditional n={metrics.n}")
+    print(f"  nll={metrics.nll:.4f}")
+    print(f"  top1 expert accuracy={metrics.top1_accuracy:.3f}")
+    print(f"  expert margin={metrics.expert_margin:.3f}")
+    print(f"  gas argmax rate={metrics.gas_argmax_rate:.3f}")
+    print(f"  expert action freq={_fmt_freq(metrics.expert_action_freq)}")
+    print(f"  pred action freq={_fmt_freq(metrics.predicted_action_freq)}")
+
+
+def _fmt_freq(freqs):
+    return "[" + ", ".join(f"{x:.2f}" for x in freqs) + "]"
 
 
 # ---------------------------------------------------------------------------
@@ -131,31 +229,79 @@ def run_condition(
     results_dir: str,
     seed: int,
     feature_set: str,
+    objective: str,
+    conditional_frame_stride: int,
+    conditional_max_states: int,
+    class_balanced: bool,
+    balance_exponent: float,
+    conditional_lr: float,
+    conditional_l2: float,
 ):
     random.seed(seed)
     np.random.seed(seed)
     print(f"\n{'='*60}")
     print(f"  Condition: {name}  ({n_expert} expert + {n_poison} poison)")
+    print(f"  Objective: {objective}")
     print(f"{'='*60}")
 
     extractor = make_extractor(feature_set)
 
     # --- 1. Load dataset ---
     print("\n[1/4] Loading trajectories...")
-    demo_trajs = build_dataset(n_expert, n_poison, expert_dir, poison_dir, extractor)
-    bg_trajs = load_trajectories_from_dir(
-        background_dir, n_background, extractor, "background"
+    extract_features = objective == "trajectory"
+    demo_trajs = build_dataset(
+        n_expert,
+        n_poison,
+        expert_dir,
+        poison_dir,
+        extractor,
+        extract_features=extract_features,
     )
+    bg_trajs = []
+    if objective == "trajectory":
+        bg_trajs = load_trajectories_from_dir(
+            background_dir, n_background, extractor, "background"
+        )
     print(
         f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  "
         f"features={feature_set}  feature_dim={extractor.feature_dim}"
     )
 
     # --- 2. Train MaxEnt IRL ---
-    print(f"\n[2/4] Training MaxEnt IRL ({irl_iters} iterations)...")
-    irl = MaxEntIRL(feature_dim=extractor.feature_dim, lr=0.05, l2=1e-4)
-    history = irl.train(demo_trajs, bg_trajs, n_iter=irl_iters, verbose=True)
-    print(f"  Final θ: {np.array2string(irl.theta, precision=3)}")
+    conditional_metrics = None
+    if objective == "trajectory":
+        print(f"\n[2/4] Training trajectory MaxEnt IRL ({irl_iters} iterations)...")
+        irl = MaxEntIRL(feature_dim=extractor.feature_dim, lr=0.05, l2=1e-4)
+        history = irl.train(demo_trajs, bg_trajs, n_iter=irl_iters, verbose=True)
+    else:
+        print(f"\n[2/4] Training conditional MaxEnt IRL ({irl_iters} iterations)...")
+        feature_tensor, expert_actions = build_counterfactual_dataset(
+            demo_trajs,
+            extractor,
+            frame_stride=conditional_frame_stride,
+            max_states=conditional_max_states,
+            seed=seed,
+        )
+        sample_weights = None
+        if class_balanced:
+            sample_weights = class_balanced_weights(expert_actions, exponent=balance_exponent)
+            print(f"  Using class-balanced action weights (exponent={balance_exponent:.2f}).")
+
+        irl = ConditionalMaxEntIRL(
+            feature_dim=extractor.feature_dim,
+            lr=conditional_lr,
+            l2=conditional_l2,
+        )
+        history = irl.train(
+            feature_tensor,
+            expert_actions,
+            sample_weights=sample_weights,
+            n_iter=irl_iters,
+            verbose=True,
+        )
+        conditional_metrics = irl.evaluate(feature_tensor, expert_actions)
+        print_conditional_metrics(conditional_metrics)
+    print(f"  Final theta: {np.array2string(irl.theta, precision=3)}")
 
     # --- 3. Train RL with learned reward ---
     print(f"\n[3/4] Training PPO with learned reward ({rl_steps:,} steps)...")
@@ -210,6 +356,11 @@ def run_condition(
         "n_background": n_background,
         "feature_set": feature_set,
         "feature_dim": extractor.feature_dim,
+        "objective": objective,
+        "class_balanced": class_balanced,
+        "balance_exponent": balance_exponent,
+        "conditional_frame_stride": conditional_frame_stride,
+        "conditional_max_states": conditional_max_states,
         "poison_pct": (
             n_poison / (n_expert + n_poison) if (n_expert + n_poison) > 0 else 0
         ),
@@ -217,6 +368,10 @@ def run_condition(
         "rl_steps": rl_steps,
         "theta": irl.theta.tolist(),
         "irl_final_ll": float(history[-1]) if history else None,
+        "irl_metric_name": "nll" if objective == "conditional" else "ll",
+        "conditional_metrics": (
+            metrics_to_dict(conditional_metrics) if conditional_metrics is not None else None
+        ),
         "eval_scores": scores,
         "mean_score": mean_score,
         "std_score": std_score,
@@ -243,8 +398,20 @@ def main():
     parser.add_argument("--rl-steps",       type=int, default=500_000)
     parser.add_argument("--n-eval",         type=int, default=5)
     parser.add_argument("--seed",           type=int, default=42)
-    parser.add_argument("--features",       choices=["v1", "v2"], default="v2",
+    parser.add_argument("--features",       choices=["v1", "v2", "v3"], default="v2",
                         help="Feature extractor to use for IRL reward learning.")
+    parser.add_argument("--objective",      choices=["trajectory", "conditional"], default="trajectory",
+                        help="MaxEnt objective: old trajectory/background objective or action-counterfactual conditional objective.")
+    parser.add_argument("--conditional-frame-stride", type=int, default=10,
+                        help="Use every Nth sampled trajectory frame for conditional MaxEnt.")
+    parser.add_argument("--conditional-max-states", type=int, default=6000,
+                        help="Maximum state/action pairs used by conditional MaxEnt; <=0 uses all sampled pairs.")
+    parser.add_argument("--class-balanced", action="store_true",
+                        help="For conditional MaxEnt, reweight states so rare expert actions matter more.")
+    parser.add_argument("--balance-exponent", type=float, default=1.0,
+                        help="Class-balancing strength. 1.0 is full inverse-frequency; 0.5 is milder.")
+    parser.add_argument("--conditional-lr", type=float, default=0.5)
+    parser.add_argument("--conditional-l2", type=float, default=1e-3)
     args = parser.parse_args()
 
     n_total     = args.n_expert   # 200
@@ -269,6 +436,13 @@ def main():
             results_dir=args.results_dir,
             seed=args.seed,
             feature_set=args.features,
+            objective=args.objective,
+            conditional_frame_stride=args.conditional_frame_stride,
+            conditional_max_states=args.conditional_max_states,
+            class_balanced=args.class_balanced,
+            balance_exponent=args.balance_exponent,
+            conditional_lr=args.conditional_lr,
+            conditional_l2=args.conditional_l2,
         )
     )
 
@@ -288,6 +462,13 @@ def main():
             results_dir=args.results_dir,
             seed=args.seed,
             feature_set=args.features,
+            objective=args.objective,
+            conditional_frame_stride=args.conditional_frame_stride,
+            conditional_max_states=args.conditional_max_states,
+            class_balanced=args.class_balanced,
+            balance_exponent=args.balance_exponent,
+            conditional_lr=args.conditional_lr,
+            conditional_l2=args.conditional_l2,
         )
     )
 

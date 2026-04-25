@@ -48,7 +48,8 @@ class FeatureExtractor(ABC):
 # ---------------------------------------------------------------------------
 # CarRacing-v3 feature extractor  (continuous=False — 5 discrete actions)
 #
-# Actions:  0=do nothing  1=steer left  2=steer right  3=gas  4=brake
+# Actions for Gymnasium CarRacing-v3 discrete mode:
+#   0=do nothing  1=steer right  2=steer left  3=gas  4=brake
 #
 # CarRacing-v3 observations are 96×96×3 RGB images.
 # These hand-crafted features are designed to distinguish expert from
@@ -59,8 +60,8 @@ class FeatureExtractor(ABC):
 #   1  grass_coverage    fraction of image pixels that are grass (green)
 #   2  center_deviation  how far road centre is from image centre [-1, 1]
 #   3  action_nothing    1 if action == 0, else 0
-#   4  action_steer_left  1 if action == 1, else 0
-#   5  action_steer_right 1 if action == 2, else 0
+#   4  action_steer_right 1 if action == 1, else 0
+#   5  action_steer_left  1 if action == 2, else 0
 #   6  action_gas         1 if action == 3, else 0
 #   7  action_brake       1 if action == 4, else 0
 # ---------------------------------------------------------------------------
@@ -91,7 +92,12 @@ def _center_deviation(img: np.ndarray) -> float:
     return float((road_centre - img_centre) / img_centre)
 
 
-N_ACTIONS = 5  # do nothing, steer left, steer right, gas, brake
+ACTION_NOTHING = 0
+ACTION_RIGHT = 1
+ACTION_LEFT = 2
+ACTION_GAS = 3
+ACTION_BRAKE = 4
+N_ACTIONS = 5
 
 
 class CarRacingFeatures(FeatureExtractor):
@@ -143,6 +149,26 @@ _DRIVING_VIEW_BOTTOM_FRAC = 0.875  # crop out the lower dashboard area
 def _driving_view(img: np.ndarray) -> np.ndarray:
     bottom = max(1, int(img.shape[0] * _DRIVING_VIEW_BOTTOM_FRAC))
     return img[:bottom]
+
+
+def _dashboard_bins(img: np.ndarray, n_bins: int = 8) -> np.ndarray:
+    """
+    Coarse brightness summaries of the bottom dashboard strip.
+
+    CarRacing observations include instrument indicators near the bottom
+    (speed, ABS, steering, gyro). We do not try to parse them perfectly; coarse
+    bins still expose useful state context that the road crop misses.
+    """
+    top = int(img.shape[0] * _DRIVING_VIEW_BOTTOM_FRAC)
+    dash = img[top:]
+    if dash.size == 0:
+        return np.zeros(n_bins, dtype=np.float64)
+
+    gray = dash.astype(np.float64).mean(axis=2) / 255.0
+    bins = []
+    for chunk in np.array_split(gray, n_bins, axis=1):
+        bins.append(float(chunk.mean()) if chunk.size else 0.0)
+    return np.array(bins, dtype=np.float64)
 
 
 def _roi_fraction(mask: np.ndarray, row0: float, row1: float, col0: float, col1: float) -> float:
@@ -235,8 +261,8 @@ class CarRacingFeaturesV2(FeatureExtractor):
         "road_heading",
         "abs_road_heading",
         "action_nothing",
-        "action_steer_left",
         "action_steer_right",
+        "action_steer_left",
         "action_gas",
         "action_brake",
         "gas_on_road",
@@ -278,7 +304,7 @@ class CarRacingFeaturesV2(FeatureExtractor):
             raise ValueError(f"CarRacingFeaturesV2 expected action in [0, {N_ACTIONS - 1}], got {action}")
         one_hot[a] = 1.0
 
-        action_nothing, action_left, action_right, action_gas, action_brake = one_hot
+        action_nothing, action_right, action_left, action_gas, action_brake = one_hot
 
         off_road_near = 1.0 - road_near
         gas_on_road = action_gas * road_near
@@ -326,3 +352,158 @@ class CarRacingFeaturesV2(FeatureExtractor):
             steer_with_heading,
             steer_against_heading,
         ], dtype=np.float64)
+
+
+class CarRacingFeaturesV3(FeatureExtractor):
+    """
+    Shortcut-resistant CarRacing-v3 features.
+
+    V2 still contains raw action indicators and complementary interaction pairs
+    that can reconstruct raw action frequencies. In practice, trajectory-level
+    MaxEnt learned the shortcut "gas is always good." V3 removes those raw action
+    shortcuts and keeps only state quality plus contextual action features.
+
+    The action-dependent features answer questions like:
+      - Is gas being used in a centered, road-visible, mostly straight state?
+      - Is gas being used in a risky/misaligned state?
+      - Is steering pointed toward the visible road/curve?
+      - Is steering happening when the track looks straight?
+
+    State-only features are useful for trajectory-level reward shaping. In a
+    state-conditional action softmax they cancel out, which is fine: the
+    contextual action features carry the action-choice signal there.
+    """
+
+    base_feature_names = (
+        "road_under_car",
+        "grass_under_car",
+        "road_ahead",
+        "grass_ahead",
+        "centered",
+        "straightness",
+        "turn_need",
+        "risk",
+        "gas_safe_straight",
+        "gas_safe_curve",
+        "gas_risky",
+        "brake_risky",
+        "noop_safe",
+        "steer_toward_center",
+        "steer_away_center",
+        "steer_with_heading",
+        "steer_against_heading",
+        "steer_when_needed",
+        "steer_on_straight",
+    )
+    dashboard_feature_names = tuple(f"dashboard_bin_{i}" for i in range(8))
+    dashboard_action_feature_names = (
+        tuple(f"gas_dashboard_bin_{i}" for i in range(8))
+        + tuple(f"brake_dashboard_bin_{i}" for i in range(8))
+        + tuple(f"left_dashboard_bin_{i}" for i in range(8))
+        + tuple(f"right_dashboard_bin_{i}" for i in range(8))
+    )
+    feature_names = base_feature_names + dashboard_feature_names + dashboard_action_feature_names
+
+    @property
+    def feature_dim(self) -> int:
+        return len(self.feature_names)
+
+    def __call__(self, state: np.ndarray, action: int) -> np.ndarray:
+        view = _driving_view(state)
+        road = _road_mask(view)
+        grass = _grass_mask(view)
+        dashboard = _dashboard_bins(state)
+
+        road_under = _roi_fraction(road, 0.68, 0.96, 0.38, 0.62)
+        grass_under = _roi_fraction(grass, 0.68, 0.96, 0.38, 0.62)
+        road_ahead = _roi_fraction(road, 0.25, 0.65, 0.24, 0.76)
+        grass_ahead = _roi_fraction(grass, 0.25, 0.65, 0.24, 0.76)
+
+        center_dev, abs_center_dev, heading = _track_geometry_from_road(road)
+        abs_heading = abs(heading)
+        centered = 1.0 - abs_center_dev
+        straightness = 1.0 - abs_heading
+        turn_need = float(np.clip(0.65 * abs_heading + 0.35 * abs_center_dev, 0.0, 1.0))
+        risk = float(np.clip(
+            0.35 * (1.0 - road_under)
+            + 0.25 * grass_under
+            + 0.25 * abs_center_dev
+            + 0.15 * abs_heading,
+            0.0,
+            1.0,
+        ))
+
+        a = int(action)
+        if a < 0 or a >= N_ACTIONS:
+            raise ValueError(f"CarRacingFeaturesV3 expected action in [0, {N_ACTIONS - 1}], got {action}")
+
+        action_nothing = float(a == ACTION_NOTHING)
+        action_left = float(a == ACTION_LEFT)
+        action_right = float(a == ACTION_RIGHT)
+        action_gas = float(a == ACTION_GAS)
+        action_brake = float(a == ACTION_BRAKE)
+        action_steer = action_left + action_right
+
+        safe_straight = road_under * road_ahead * centered * straightness
+        safe_curve = road_under * road_ahead * centered * turn_need
+
+        gas_safe_straight = action_gas * safe_straight
+        gas_safe_curve = action_gas * safe_curve
+        gas_risky = action_gas * risk
+        brake_risky = action_brake * risk
+        noop_safe = action_nothing * safe_straight
+
+        steer_toward_center = (
+            action_left * max(-center_dev, 0.0)
+            + action_right * max(center_dev, 0.0)
+        )
+        steer_away_center = (
+            action_left * max(center_dev, 0.0)
+            + action_right * max(-center_dev, 0.0)
+        )
+        steer_with_heading = (
+            action_left * max(-heading, 0.0)
+            + action_right * max(heading, 0.0)
+        )
+        steer_against_heading = (
+            action_left * max(heading, 0.0)
+            + action_right * max(-heading, 0.0)
+        )
+        steer_when_needed = action_steer * turn_need
+        steer_on_straight = action_steer * straightness
+
+        gas_dashboard = action_gas * dashboard
+        brake_dashboard = action_brake * dashboard
+        left_dashboard = action_left * dashboard
+        right_dashboard = action_right * dashboard
+
+        base_features = np.array([
+            road_under,
+            grass_under,
+            road_ahead,
+            grass_ahead,
+            centered,
+            straightness,
+            turn_need,
+            risk,
+            gas_safe_straight,
+            gas_safe_curve,
+            gas_risky,
+            brake_risky,
+            noop_safe,
+            steer_toward_center,
+            steer_away_center,
+            steer_with_heading,
+            steer_against_heading,
+            steer_when_needed,
+            steer_on_straight,
+        ], dtype=np.float64)
+
+        return np.concatenate([
+            base_features,
+            dashboard,
+            gas_dashboard,
+            brake_dashboard,
+            left_dashboard,
+            right_dashboard,
+        ]).astype(np.float64)

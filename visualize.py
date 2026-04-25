@@ -22,7 +22,7 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 
 
-ACTION_NAMES = {0: "NOTHING", 1: "LEFT", 2: "RIGHT", 3: "GAS", 4: "BRAKE"}
+ACTION_NAMES = {0: "NOTHING", 1: "RIGHT", 2: "LEFT", 3: "GAS", 4: "BRAKE"}
 
 
 def _make_env():

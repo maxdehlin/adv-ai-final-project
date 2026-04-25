@@ -158,6 +158,16 @@ can train a policy at all.
 python -m experiments.no_poison_bc
 ```
 
+**Trust diagnostics:**
+
+```bash
+# KNN distance to clean expert reference trajectories
+python -m experiments.analyze_knn_outliers --poison-dir data/raw/poison_random
+
+# Autoencoder reconstruction error from clean expert reference trajectories
+python -m experiments.analyze_autoencoder_trust --poison-dir data/raw/poison_random
+```
+
 **Preliminary (baseline MaxEnt IRL, no ANTIDOTE):**
 
 Runs two conditions — 0% poison and 25% poison — and compares final RL agent scores.
@@ -172,6 +182,19 @@ python -m experiments.preliminary --irl-iters 1000 --rl-steps 500000 --n-eval 5
 
 # Use the richer local-geometry/action-context feature set
 python -m experiments.preliminary --features v2
+
+# Use the shortcut-resistant V3 feature set
+python -m experiments.preliminary --features v3
+
+# Use the action-counterfactual conditional MaxEnt objective
+python -m experiments.preliminary --features v3 --objective conditional --class-balanced --rl-steps 300000
+```
+
+Before running PPO, check whether the reward prefers expert actions over
+counterfactual actions in the same state:
+
+```bash
+python -m experiments.diagnose_counterfactual_maxent --features v3 --class-balanced
 ```
 
 Results saved to `results/preliminary/` as JSON files (one per condition).

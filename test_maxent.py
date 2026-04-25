@@ -3,7 +3,7 @@ Quick smoke test — no gym required.
 Generates synthetic expert + background trajectories and verifies the IRL loop.
 """
 import numpy as np
-from maxent_irl import Trajectory, MaxEntIRL, CarRacingFeaturesV2
+from maxent_irl import Trajectory, MaxEntIRL, CarRacingFeaturesV2, CarRacingFeaturesV3
 
 np.random.seed(0)
 
@@ -28,6 +28,21 @@ def smoke_test_v2_features():
 
 
 smoke_test_v2_features()
+
+
+def smoke_test_v3_features():
+    extractor = CarRacingFeaturesV3()
+    img = np.full((96, 96, 3), [100, 200, 100], dtype=np.uint8)  # grass
+    img[:84, 38:58] = [100, 100, 100]  # centered road strip
+
+    features = extractor(img, 3)  # gas
+    assert features.shape == (extractor.feature_dim,)
+    assert np.isfinite(features).all()
+    assert "action_gas" not in extractor.feature_names
+    assert features[extractor.feature_names.index("gas_safe_straight")] > 0.0
+
+
+smoke_test_v3_features()
 
 def make_trajs(n, feature_mean, feature_std):
     trajs = []

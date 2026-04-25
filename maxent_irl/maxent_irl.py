@@ -118,7 +118,7 @@ class MaxEntIRL:
         bg_probs = self._bg_probs(background_trajs)               # (M,)
         f_expected = (bg_probs[:, None] * bg_features).sum(axis=0)  # (F,)
 
-        grad = total_weight * (f_empirical - f_expected)
+        grad = (f_empirical - f_expected)
 
         if self.l2 > 0:
             grad -= self.l2 * self.theta

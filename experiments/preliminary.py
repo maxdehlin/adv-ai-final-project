@@ -218,7 +218,7 @@ def main():
     parser.add_argument("--poison-dir",     default="data/raw/poison_human_stop")
     parser.add_argument("--background-dir", default="data/raw/background",
                         help="Random-policy trajectories used for partition function Z(θ).")
-    parser.add_argument("--n-background",   type=int, default=50)
+    parser.add_argument("--n-background",   type=int, default=100)
     parser.add_argument("--results-dir",    default="results/preliminary")
     parser.add_argument("--n-expert",       type=int, default=200)
     parser.add_argument("--irl-iters",      type=int, default=1000)

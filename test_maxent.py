@@ -3,7 +3,7 @@ Quick smoke test — no gym required.
 Generates synthetic expert + background trajectories and verifies the IRL loop.
 """
 import numpy as np
-from maxent_irl import Trajectory, MaxEntIRL
+from maxent_irl import Trajectory, MaxEntIRL, CarRacingFeaturesV2
 
 np.random.seed(0)
 
@@ -11,6 +11,23 @@ F    = 8   # feature dim
 N    = 20  # demo trajectories
 M    = 20  # background trajectories (random policy)
 T    = 50  # steps per trajectory
+
+
+def smoke_test_v2_features():
+    extractor = CarRacingFeaturesV2()
+    img = np.full((96, 96, 3), [100, 200, 100], dtype=np.uint8)  # grass
+    img[:84, 38:58] = [100, 100, 100]  # centered road strip
+
+    features = extractor(img, 3)  # gas
+    assert features.shape == (extractor.feature_dim,)
+    assert np.isfinite(features).all()
+
+    names = extractor.feature_names
+    assert features[names.index("action_gas")] == 1.0
+    assert features[names.index("gas_on_road")] > 0.0
+
+
+smoke_test_v2_features()
 
 def make_trajs(n, feature_mean, feature_std):
     trajs = []
@@ -35,13 +52,13 @@ bg_trajs   = make_trajs(M, bg_mean, 0.1)
 
 # --- Baseline: uniform weights ---
 model = MaxEntIRL(feature_dim=F, lr=0.05)
-history = model.train(demo_trajs, bg_trajs, n_iter=200, verbose=True)
-print(f"\nBaseline final θ: {model.theta}")
+history = model.train(demo_trajs, bg_trajs, n_iter=200, verbose=False)
+print(f"\nBaseline final theta: {model.theta}")
 print("  (positive values = features more common in expert than background)")
 
 # --- ANTIDOTE hook: custom trust weights ---
 model.reset()
 weights = np.random.rand(N)
 weights /= weights.sum()
-history_w = model.train(demo_trajs, bg_trajs, weights=weights, n_iter=200, verbose=True)
-print(f"\nWeighted final θ: {model.theta}")
+history_w = model.train(demo_trajs, bg_trajs, weights=weights, n_iter=200, verbose=False)
+print(f"\nWeighted final theta: {model.theta}")

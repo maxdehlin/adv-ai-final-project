@@ -35,7 +35,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from maxent_irl import Trajectory, CarRacingFeatures, MaxEntIRL
+from maxent_irl import (
+    Trajectory,
+    FeatureExtractor,
+    CarRacingFeatures,
+    CarRacingFeaturesV2,
+    MaxEntIRL,
+)
 from data_collection.collect_demos import load_trajectory
 
 
@@ -44,8 +50,16 @@ from data_collection.collect_demos import load_trajectory
 # ---------------------------------------------------------------------------
 
 
+def make_extractor(feature_set: str) -> FeatureExtractor:
+    if feature_set == "v1":
+        return CarRacingFeatures()
+    if feature_set == "v2":
+        return CarRacingFeaturesV2()
+    raise ValueError(f"Unknown feature set: {feature_set}")
+
+
 def load_trajectories_from_dir(
-    directory: str, n: int, extractor: CarRacingFeatures, label: str = ""
+    directory: str, n: int, extractor: FeatureExtractor, label: str = ""
 ) -> list[Trajectory]:
     import glob
 
@@ -68,7 +82,7 @@ def build_dataset(
     n_poison: int,
     expert_dir: str,
     poison_dir: str,
-    extractor: CarRacingFeatures,
+    extractor: FeatureExtractor,
 ) -> list[Trajectory]:
     trajs = []
     trajs += load_trajectories_from_dir(expert_dir, n_expert, extractor, "expert")
@@ -86,7 +100,7 @@ def build_dataset(
 class LearnedRewardEnv(gym.Wrapper):
     """Swap out the ground-truth reward for r_θ(s, a) = θ · φ(s, a)."""
 
-    def __init__(self, env, irl_model: MaxEntIRL, extractor: CarRacingFeatures):
+    def __init__(self, env, irl_model: MaxEntIRL, extractor: FeatureExtractor):
         super().__init__(env)
         self.irl = irl_model
         self.extractor = extractor
@@ -116,6 +130,7 @@ def run_condition(
     n_eval: int,
     results_dir: str,
     seed: int,
+    feature_set: str,
 ):
     random.seed(seed)
     np.random.seed(seed)
@@ -123,7 +138,7 @@ def run_condition(
     print(f"  Condition: {name}  ({n_expert} expert + {n_poison} poison)")
     print(f"{'='*60}")
 
-    extractor = CarRacingFeatures()
+    extractor = make_extractor(feature_set)
 
     # --- 1. Load dataset ---
     print("\n[1/4] Loading trajectories...")
@@ -132,7 +147,8 @@ def run_condition(
         background_dir, n_background, extractor, "background"
     )
     print(
-        f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  feature_dim={extractor.feature_dim}"
+        f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  "
+        f"features={feature_set}  feature_dim={extractor.feature_dim}"
     )
 
     # --- 2. Train MaxEnt IRL ---
@@ -146,7 +162,7 @@ def run_condition(
 
     def make_learned_env():
         base = gym.make("CarRacing-v3", continuous=False)
-        return LearnedRewardEnv(base, irl, CarRacingFeatures())
+        return LearnedRewardEnv(base, irl, make_extractor(feature_set))
 
     train_env = VecTransposeImage(make_vec_env(make_learned_env, n_envs=4))
     rl_model = PPO(
@@ -192,6 +208,8 @@ def run_condition(
         "n_expert": n_expert,
         "n_poison": n_poison,
         "n_background": n_background,
+        "feature_set": feature_set,
+        "feature_dim": extractor.feature_dim,
         "poison_pct": (
             n_poison / (n_expert + n_poison) if (n_expert + n_poison) > 0 else 0
         ),
@@ -218,13 +236,15 @@ def main():
     parser.add_argument("--poison-dir",     default="data/raw/poison_human_stop")
     parser.add_argument("--background-dir", default="data/raw/background",
                         help="Random-policy trajectories used for partition function Z(θ).")
-    parser.add_argument("--n-background",   type=int, default=50)
+    parser.add_argument("--n-background",   type=int, default=100)
     parser.add_argument("--results-dir",    default="results/preliminary")
     parser.add_argument("--n-expert",       type=int, default=200)
     parser.add_argument("--irl-iters",      type=int, default=1000)
     parser.add_argument("--rl-steps",       type=int, default=500_000)
     parser.add_argument("--n-eval",         type=int, default=5)
     parser.add_argument("--seed",           type=int, default=42)
+    parser.add_argument("--features",       choices=["v1", "v2"], default="v2",
+                        help="Feature extractor to use for IRL reward learning.")
     args = parser.parse_args()
 
     n_total     = args.n_expert   # 200
@@ -248,6 +268,7 @@ def main():
             n_eval=args.n_eval,
             results_dir=args.results_dir,
             seed=args.seed,
+            feature_set=args.features,
         )
     )
 
@@ -266,6 +287,7 @@ def main():
             n_eval=args.n_eval,
             results_dir=args.results_dir,
             seed=args.seed,
+            feature_set=args.features,
         )
     )
 

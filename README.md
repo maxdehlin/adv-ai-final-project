@@ -125,6 +125,15 @@ python visualize.py --model models/expert_ppo.zip --episodes 5
 
 ### 6. Run experiments
 
+**No-poison behavior cloning sanity baseline:**
+
+Before interpreting poisoned IRL results, check that clean expert demonstrations
+can train a policy at all.
+
+```bash
+python -m experiments.no_poison_bc
+```
+
 **Preliminary (baseline MaxEnt IRL, no ANTIDOTE):**
 
 Runs two conditions — 0% poison and 25% poison — and compares final RL agent scores.
@@ -136,6 +145,9 @@ python -m experiments.preliminary
 ```bash
 # Tune iterations and RL training steps
 python -m experiments.preliminary --irl-iters 1000 --rl-steps 500000 --n-eval 5
+
+# Use the richer local-geometry/action-context feature set
+python -m experiments.preliminary --features v2
 ```
 
 Results saved to `results/preliminary/` as JSON files (one per condition).

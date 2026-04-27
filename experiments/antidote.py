@@ -175,7 +175,8 @@ def main():
     parser.add_argument("--ae-summary-mode", default="action", choices=["action", "v2"])
     parser.add_argument("--ae-frame-stride", type=int, default=10)
     parser.add_argument("--results-dir",    default="results/antidote")
-    parser.add_argument("--seed",           type=int, default=42)
+    parser.add_argument("--seed",           type=int, default=None,
+                        help="Random seed for reproducible sampling/training. Default: random each run.")
     args = parser.parse_args()
 
     # Resolve derived args
@@ -184,8 +185,9 @@ def main():
     if args.poison_name is None:
         args.poison_name = os.path.basename(args.poison_dir.rstrip("/"))
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
 
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
     unknown_methods = [m for m in methods if m not in ALL_METHODS]
@@ -208,6 +210,7 @@ def main():
     print(f"  Eval poison dir:  {args.eval_poison_dir}")
     if not same_dir:
         print("  WARNING: held-out poison differs from training poison; metrics are cross-poison eval.")
+    print(f"  Seed:        {args.seed if args.seed is not None else 'random'}")
     print(f"  Methods:     {methods}")
     print(f"  Results →    {results_dir}")
     print(f"{'='*60}")

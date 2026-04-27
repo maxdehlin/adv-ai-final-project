@@ -76,7 +76,7 @@ def fit_autoencoder_scores(
     latent_dim: Optional[int] = None,
     hidden_dim: Optional[int] = None,
     val_frac: float = 0.2,
-    seed: int = 42,
+    seed: Optional[int] = 42,
     device_arg: Optional[str] = None,
     patience: int = 30,
 ) -> AutoencoderResult:
@@ -115,7 +115,10 @@ def fit_autoencoder_scores(
     if hidden_dim is None:
         hidden_dim = max(16, min(128, input_dim * 2))
 
-    torch.manual_seed(seed)
+    if seed is not None:
+        torch.manual_seed(seed)
+    else:
+        torch.seed()
     device = torch.device(device_arg if device_arg else ("cuda" if torch.cuda.is_available() else "cpu"))
     model = build_autoencoder(nn, input_dim=input_dim, latent_dim=latent_dim, hidden_dim=hidden_dim).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -206,7 +209,7 @@ def beta_AE(
     latent_dim: Optional[int] = None,
     hidden_dim: Optional[int] = None,
     val_frac: float = 0.2,
-    seed: int = 42,
+    seed: Optional[int] = 42,
     device_arg: Optional[str] = None,
     patience: int = 30,
     return_result: bool = False,

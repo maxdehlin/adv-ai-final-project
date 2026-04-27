@@ -20,6 +20,11 @@ class FeatureExtractor(ABC):
         """Dimensionality F of the feature vector."""
         ...
 
+    @property
+    def feature_names(self) -> list[str]:
+        """Names for each feature dimension."""
+        return [f"feature_{i}" for i in range(self.feature_dim)]
+
     @abstractmethod
     def __call__(self, state: np.ndarray, action) -> np.ndarray:
         """
@@ -71,6 +76,26 @@ _ROAD_GREY_HIGH = np.array([130, 130, 130])
 _GRASS_GREEN_LOW  = np.array([90, 170, 90])
 _GRASS_GREEN_HIGH = np.array([130, 230, 130])
 
+V1_FEATURE_NAMES = [
+    "road_coverage",
+    "grass_coverage",
+    "center_deviation",
+    "action_nothing",
+    "action_steer_left",
+    "action_steer_right",
+    "action_gas",
+    "action_brake",
+]
+
+V2_EXTRA_FEATURE_NAMES = [
+    "abs_center_deviation",
+    "visual_motion",
+    "road_coverage_delta",
+    "grass_coverage_delta",
+    "center_deviation_delta",
+    "same_action_as_previous",
+]
+
 
 def _road_mask(img: np.ndarray) -> np.ndarray:
     return np.all((img >= _ROAD_GREY_LOW) & (img <= _ROAD_GREY_HIGH), axis=-1)
@@ -91,6 +116,15 @@ def _center_deviation(img: np.ndarray) -> float:
     return float((road_centre - img_centre) / img_centre)
 
 
+def _visual_motion(state: np.ndarray, prev_state: np.ndarray | None) -> float:
+    """Mean absolute frame difference, normalized to [0, 1]."""
+    if prev_state is None:
+        return 0.0
+    current = np.asarray(state, dtype=np.float32)
+    previous = np.asarray(prev_state, dtype=np.float32)
+    return float(np.mean(np.abs(current - previous)) / 255.0)
+
+
 N_ACTIONS = 5  # do nothing, steer left, steer right, gas, brake
 
 
@@ -106,6 +140,10 @@ class CarRacingFeatures(FeatureExtractor):
     @property
     def feature_dim(self) -> int:
         return 8  # 3 visual features + 5 action one-hot
+
+    @property
+    def feature_names(self) -> list[str]:
+        return V1_FEATURE_NAMES.copy()
 
     def __call__(self, state: np.ndarray, action: int) -> np.ndarray:
         """
@@ -125,3 +163,71 @@ class CarRacingFeatures(FeatureExtractor):
             [road_coverage, grass_coverage, center_dev],
             one_hot,
         ])
+
+
+class CarRacingFeaturesV2(CarRacingFeatures):
+    """
+    Backward-compatible extension of CarRacingFeatures.
+
+    The first 8 dimensions are exactly the V1 features. Extra dimensions add
+    temporal and derived signals that help identify low-motion/stuck behavior,
+    especially stop-poison trajectories.
+    """
+
+    @property
+    def feature_dim(self) -> int:
+        return len(V1_FEATURE_NAMES) + len(V2_EXTRA_FEATURE_NAMES)
+
+    @property
+    def feature_names(self) -> list[str]:
+        return V1_FEATURE_NAMES.copy() + V2_EXTRA_FEATURE_NAMES.copy()
+
+    def __call__(
+        self,
+        state: np.ndarray,
+        action: int,
+        prev_state: np.ndarray | None = None,
+        prev_action: int | None = None,
+    ) -> np.ndarray:
+        v1 = super().__call__(state, action)
+
+        road_coverage = float(v1[0])
+        grass_coverage = float(v1[1])
+        center_dev = float(v1[2])
+
+        if prev_state is None:
+            prev_road = road_coverage
+            prev_grass = grass_coverage
+            prev_center = center_dev
+        else:
+            n_pixels = prev_state.shape[0] * prev_state.shape[1]
+            prev_road = float(_road_mask(prev_state).sum() / n_pixels)
+            prev_grass = float(_grass_mask(prev_state).sum() / n_pixels)
+            prev_center = _center_deviation(prev_state)
+
+        same_action = 0.0 if prev_action is None else float(int(action) == int(prev_action))
+        extras = np.array(
+            [
+                abs(center_dev),
+                _visual_motion(state, prev_state),
+                road_coverage - prev_road,
+                grass_coverage - prev_grass,
+                center_dev - prev_center,
+                same_action,
+            ],
+            dtype=np.float64,
+        )
+        return np.concatenate([v1, extras])
+
+    def extract_trajectory(self, traj: Trajectory) -> Trajectory:
+        features = []
+        prev_state = None
+        prev_action = None
+        for state, action in zip(traj.states, traj.actions):
+            features.append(self(state, int(action), prev_state=prev_state, prev_action=prev_action))
+            prev_state = state
+            prev_action = int(action)
+
+        traj.features = np.array(features)
+        traj.compute_feature_sum()
+        return traj

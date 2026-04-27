@@ -89,7 +89,7 @@ def trajectory_summary(
     Convert a trajectory into a fixed-length trust-estimation vector.
 
     mode="action" is fast and uses action statistics only.
-    mode="v2" appends sampled CarRacingFeatures mean/std summaries.
+    mode="v2" appends sampled CarRacingFeaturesV2 mean/std summaries.
     """
     summary, names = action_summary(actions)
     if mode == "action":
@@ -97,14 +97,25 @@ def trajectory_summary(
     if mode != "v2":
         raise ValueError(f"Unknown summary mode: {mode}")
 
-    from .features import CarRacingFeatures
+    from .features import CarRacingFeaturesV2
 
     actions = _as_actions(actions)
-    extractor = CarRacingFeatures()
+    extractor = CarRacingFeaturesV2()
     stride = max(1, int(frame_stride))
     indices = np.arange(0, len(actions), stride)
 
-    features = np.array([extractor(states[i], int(actions[i])) for i in indices])
+    features = []
+    prev_state = None
+    prev_action = None
+    index_set = set(int(i) for i in indices)
+    for i, (state, action) in enumerate(zip(states, actions)):
+        if i in index_set:
+            features.append(
+                extractor(state, int(action), prev_state=prev_state, prev_action=prev_action)
+            )
+        prev_state = state
+        prev_action = int(action)
+    features = np.array(features)
     feature_summary = np.concatenate([features.mean(axis=0), features.std(axis=0)])
     feature_names = (
         [f"v2_mean_{name}" for name in extractor.feature_names]

@@ -140,6 +140,13 @@ python -m experiments.preliminary --irl-iters 1000 --rl-steps 500000 --n-eval 5
 
 Results saved to `results/preliminary/` as JSON files (one per condition).
 
+The ANTIDOTE runner defaults to the original 8-D reward features (`v1`). To use
+the richer backward-compatible feature set with motion and temporal deltas:
+
+```bash
+python -m experiments.antidote --dataset D1 --feature-version v2 --methods baseline,OD,AE,RC
+```
+
 ---
 
 ## Project Structure
@@ -147,7 +154,7 @@ Results saved to `results/preliminary/` as JSON files (one per condition).
 ```
 maxent_irl/
 ├── trajectory.py        # Trajectory dataclass
-├── features.py          # CarRacingFeatures: 96×96×3 image → R^8
+├── features.py          # CarRacingFeatures v1/v2: image/action → reward features
 └── maxent_irl.py        # MaxEntIRL with per-trajectory trust weight hook
 
 data_collection/

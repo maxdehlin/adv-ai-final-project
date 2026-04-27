@@ -30,7 +30,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from maxent_irl import Trajectory, CarRacingFeatures, MaxEntIRL
+from maxent_irl import Trajectory, CarRacingFeatures, CarRacingFeaturesV2, MaxEntIRL
 from maxent_irl.trust import beta_OD, beta_RC
 from maxent_irl.autoencoder_trust import beta_AE
 from data_collection.collect_demos import load_trajectory
@@ -91,6 +91,14 @@ def load_fixed(directory, indices, extractor, label=""):
         trajs.append(_load_path(p, extractor))
     print(f"  Loaded {len(trajs)} {label} trajectories (fixed indices)")
     return trajs
+
+
+def make_extractor(feature_version: str):
+    if feature_version == "v1":
+        return CarRacingFeatures()
+    if feature_version == "v2":
+        return CarRacingFeaturesV2()
+    raise ValueError(f"Unknown feature version: {feature_version}")
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +163,8 @@ def main():
     parser.add_argument("--n-background",   type=int, default=50)
     parser.add_argument("--methods",        default="baseline,OD,AE,RC")
     parser.add_argument("--irl-iters",      type=int, default=1000)
+    parser.add_argument("--feature-version", default="v1", choices=["v1", "v2"],
+                        help="Reward feature extractor. v1 is the original 8-D feature set.")
     parser.add_argument("--ae-epochs",      type=int, default=200)
     parser.add_argument("--ae-summary-mode", default="action", choices=["action", "v2"])
     parser.add_argument("--ae-frame-stride", type=int, default=10)
@@ -192,7 +202,7 @@ def main():
     print(f"  Results →    {results_dir}")
     print(f"{'='*60}")
 
-    extractor = CarRacingFeatures()
+    extractor = make_extractor(args.feature_version)
 
     # --- Load data ---
     print("\n[DATA] Loading trajectories...")
@@ -251,7 +261,7 @@ def main():
                                    extractor, "held-out poison")
 
     print(f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  "
-          f"feature_dim={extractor.feature_dim}")
+          f"feature_dim={extractor.feature_dim}  feature_version={args.feature_version}")
     print(f"  Held-out eval: {len(held_out_expert)} expert + "
           f"{len(held_out_poison)} poison")
 
@@ -316,6 +326,8 @@ def main():
             "n_poison":     len(poison_trajs),
             "poison_pct":   len(poison_trajs) / (n_expert + len(poison_trajs)) if poison_trajs else 0.0,
             "irl_iters":    args.irl_iters,
+            "feature_version": args.feature_version,
+            "feature_names": extractor.feature_names,
             "seed":         args.seed,
             "theta":        irl.theta.tolist(),
             **eval_metrics,

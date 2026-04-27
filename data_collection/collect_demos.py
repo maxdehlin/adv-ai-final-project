@@ -72,7 +72,7 @@ def _right_policy(_obs):
 
 
 class ZigZagPolicy:
-    """Alternates left/right steering on a fixed period."""
+    """Accelerates while alternating left/right steering on a fixed period."""
 
     def __init__(self, period: int = 12):
         self.period = max(1, int(period))
@@ -84,7 +84,7 @@ class ZigZagPolicy:
     def __call__(self, _obs):
         phase = (self.t // self.period) % 2
         self.t += 1
-        return ACTION_LEFT if phase == 0 else ACTION_RIGHT
+        return ACTION_GAS if self.t % 2 == 0 else (ACTION_LEFT if phase == 0 else ACTION_RIGHT)
 
 
 class ExpertThenPolicy:

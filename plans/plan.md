@@ -141,25 +141,24 @@ These are the core contribution of ANTIDOTE. Each method assigns `w_i ∈ [0, 1]
 
 ---
 
-### 4.2 Method 2: Poison Classifier (β_PC)
+### 4.2 Method 2: Autoencoder Trust (β_AE)
 
-**Idea**: Use a small, guaranteed-clean "anchor set" to train a binary classifier distinguishing clean from noisy trajectories. Inspired by the defense from the RLHF poisoning paper (splitting reward model data from SFT data).
+**Idea**: Train an autoencoder on the mixed demonstration dataset itself. Because expert trajectories are assumed to be the majority/common mode, they should reconstruct better than rarer poisoned or unusual trajectories.
 
 **Steps**:
-1. Reserve a small clean anchor set `D_anchor` (e.g., 10 trajectories) that are **guaranteed** to be expert quality. These are held out and never mixed with the full dataset.
-   - In practice: the first 10 trajectories from the expert collection, before any poison mixing.
-2. Generate "negative examples" (synthetic poison) for training the classifier:
-   - Use randomly-acting or badly-behaving agents to produce synthetic bad trajectories.
-   - These do NOT come from the poisoned datasets D1–D5.
-3. Train a binary classifier `C: φ(τ) → {clean, poison}` using `D_anchor` (positive) + synthetic negatives.
+1. Convert all demo trajectories in the already-poisoned dataset into fixed-length summary vectors `x_i = φ(τ_i)`.
+2. Train an autoencoder on those same mixed demo summaries.
+3. Score each demo by reconstruction error:
+   ```
+   error_i = ||AE(x_i) - x_i||^2
+   ```
 4. Assign weights:
    ```
-   w_i = P(clean | φ(τ_i))   (predicted probability from C)
+   w_i = sigmoid(-λ · (error_i - threshold))
    ```
+   where the threshold is estimated from the reconstruction-error distribution on the mixed dataset.
 
-**Key question**: Does the classifier generalize from synthetic poison to the actual poison in the dataset? This is a core empirical question and a potential limitation to discuss.
-
-**Alternative if anchor set is unavailable**: Use the output of Method 1 (Outlier Detection) to pseudo-label a clean subset, then train the classifier iteratively.
+**Key question**: Is the expert majority strong enough that poison remains harder to reconstruct, rather than the autoencoder learning both clean and poisoned modes equally well?
 
 ---
 
@@ -208,7 +207,7 @@ Gradient:
 Where `f_i` is the feature count vector for trajectory `τ_i`. This is a minimal change to the standard MaxEnt IRL gradient: the empirical feature expectation becomes a **weighted average** instead of a uniform average.
 
 **Implementation note**: Weights `w_i` are recomputed before gradient updates:
-- For β_OD and β_PC: weights are computed once before training.
+- For β_OD and β_AE: weights are computed once before training.
 - For β_RC: weights are recomputed each outer iteration (EM loop).
 
 ---
@@ -217,7 +216,7 @@ Where `f_i` is the feature count vector for trajectory `τ_i`. This is a minimal
 
 ### 6.1 Training Protocol
 
-For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
+For each dataset D0–D5, and for each method (Baseline, β_OD, β_AE, β_RC):
 1. Compute trajectory weights (or use uniform weights for baseline).
 2. Run weighted MaxEnt IRL for `M` gradient steps (e.g., M=1000) with a fixed learning rate.
 3. Extract the learned reward function `r_θ`.
@@ -266,7 +265,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 | 96×96 image state space still continuous | Use feature-based linear reward; images only used to compute hand-crafted scalar features |
 | Partition function Z(θ) approximated over finite demo set | Trajectory-level softmax; valid and standard for this setting |
 | Poison at 50% may corrupt β_RC initialization | Warm-start β_RC with β_OD weights |
-| Anchor set assumption for β_PC is unrealistic | Discuss as a limitation; test sensitivity to anchor set size |
+| β_AE may learn poison too if poison is common or clustered | Test sensitivity to poison concentration, model capacity, and summary features |
 | Expert demos require pre-trained agent | Train PPO on ground-truth reward first; save demos before mixing poison |
 | Feature extractor uses continuous action values | Update `CarRacingFeatures` to use discrete action one-hot / frequency features |
 
@@ -280,7 +279,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 
 3. **Partition function approximation**: With discrete actions, trajectory-level softmax over demo set is the chosen approach. Soft value iteration over the 5-action space is a possible upgrade if time permits.
 
-4. **β_PC anchor set size**: How many guaranteed-clean trajectories are assumed available? Is this a realistic assumption for the problem framing?
+4. **β_AE capacity / thresholding**: How small should the autoencoder be, and where should the reconstruction-error threshold sit, so common expert behavior reconstructs better than poison?
 
 5. **Combining methods**: Should we report each β independently, or also test a combined estimator (e.g., geometric mean of β_OD and β_RC)?
 
@@ -295,7 +294,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 | Expert data collection + poisoning pipeline | TBD |
 | Baseline MaxEnt IRL implementation | TBD |
 | β_OD: Outlier Detection | TBD |
-| β_PC: Poison Classifier | TBD |
+| β_AE: Autoencoder Trust | TBD |
 | β_RC: Reward Consistency | TBD |
 | RL training + evaluation harness | TBD |
 | Visualization + paper writing | TBD |
@@ -308,7 +307,7 @@ For each dataset D0–D5, and for each method (Baseline, β_OD, β_PC, β_RC):
 - [ ] Trajectory feature extractor
 - [ ] Baseline MaxEnt IRL (unweighted)
 - [ ] β_OD implementation + integration
-- [ ] β_PC implementation + integration
+- [ ] β_AE implementation + integration
 - [ ] β_RC implementation + integration (EM loop)
 - [ ] RL training pipeline (PPO on learned reward)
 - [ ] Evaluation script (ground-truth scoring)

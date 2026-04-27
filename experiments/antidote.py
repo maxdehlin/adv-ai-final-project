@@ -1,7 +1,7 @@
 """
 ANTIDOTE experiment runner — all four methods on a single dataset.
 
-Runs baseline, β_OD, β_PC, β_RC on one of D0–D5, then evaluates the learned
+Runs baseline, β_OD, β_AE, β_RC on one of D0–D5, then evaluates the learned
 reward function DIRECTLY by scoring held-out expert and poison trajectories.
 
 No RL training is performed. The reward quality is measured by:
@@ -31,7 +31,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from maxent_irl import Trajectory, CarRacingFeatures, MaxEntIRL
-from maxent_irl.trust import beta_OD, beta_PC, beta_RC
+from maxent_irl.trust import beta_OD, beta_RC
+from maxent_irl.autoencoder_trust import beta_AE
 from data_collection.collect_demos import load_trajectory
 
 # ---------------------------------------------------------------------------
@@ -47,10 +48,10 @@ DATASETS = {
     "D5": {"n_expert": 100, "n_poison": 100},
 }
 
-ALL_METHODS = ["baseline", "OD", "PC", "RC"]
+ALL_METHODS = ["baseline", "OD", "AE", "RC"]
 
-# Held-out eval set: fixed indices never used in demos or anchor.
-# 1000 expert files available; anchor uses 0–9; demos sample from 10–949.
+# Held-out eval set: fixed indices never used in demos.
+# 1000 expert files available; demos sample outside 950–999.
 EVAL_EXPERT_INDICES = list(range(950, 1000))  # 50 held-out expert trajectories
 
 # When the eval poison dir is the SAME as the training poison dir, we reserve
@@ -151,11 +152,12 @@ def main():
     parser.add_argument("--poison-name",    default=None,
                         help="Label used in the results path. Defaults to basename of --poison-dir.")
     parser.add_argument("--background-dir", default="data/raw/background")
-    parser.add_argument("--anchor-dir",     default="data/raw/expert")
     parser.add_argument("--n-background",   type=int, default=50)
-    parser.add_argument("--n-anchor",       type=int, default=10)
-    parser.add_argument("--methods",        default="baseline,OD,PC,RC")
+    parser.add_argument("--methods",        default="baseline,OD,AE,RC")
     parser.add_argument("--irl-iters",      type=int, default=1000)
+    parser.add_argument("--ae-epochs",      type=int, default=200)
+    parser.add_argument("--ae-summary-mode", default="action", choices=["action", "v2"])
+    parser.add_argument("--ae-frame-stride", type=int, default=10)
     parser.add_argument("--results-dir",    default="results/antidote")
     parser.add_argument("--seed",           type=int, default=42)
     args = parser.parse_args()
@@ -169,7 +171,10 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    methods = [m.strip() for m in args.methods.split(",")]
+    methods = [m.strip() for m in args.methods.split(",") if m.strip()]
+    unknown_methods = [m for m in methods if m not in ALL_METHODS]
+    if unknown_methods:
+        raise ValueError(f"Unknown methods {unknown_methods}. Choose from {ALL_METHODS}.")
     cfg = DATASETS[args.dataset]
     n_expert, n_poison = cfg["n_expert"], cfg["n_poison"]
     poison_pct = n_poison / 200
@@ -192,11 +197,9 @@ def main():
     # --- Load data ---
     print("\n[DATA] Loading trajectories...")
 
-    anchor_indices = list(range(args.n_anchor))
-    anchor_trajs = load_fixed(args.anchor_dir, anchor_indices, extractor, "anchor")
-
-    # Expert demo pool: exclude anchor indices and held-out eval indices
-    excluded = set(anchor_indices) | set(EVAL_EXPERT_INDICES)
+    # Expert demo pool: exclude held-out eval indices only. Trust estimation
+    # methods receive no clean side data.
+    excluded = set(EVAL_EXPERT_INDICES)
     all_expert_paths = sorted(glob.glob(os.path.join(args.expert_dir, "traj_*.npz")))
     demo_pool_paths = [
         p for p in all_expert_paths
@@ -276,12 +279,18 @@ def main():
             irl.train(demo_trajs, bg_trajs, weights=weights,
                       n_iter=args.irl_iters, verbose=True)
 
-        elif method == "PC":
-            print("  [β_PC] Training poison classifier...")
-            weights = beta_PC(demo_trajs, anchor_trajs, bg_trajs)
+        elif method == "AE":
+            print("  [β_AE] Training autoencoder on mixed demo summaries...")
+            weights = beta_AE(
+                demo_trajs,
+                summary_mode=args.ae_summary_mode,
+                frame_stride=args.ae_frame_stride,
+                epochs=args.ae_epochs,
+                seed=args.seed,
+            )
             print(f"  Weights: min={weights.min():.3f}  max={weights.max():.3f}  "
                   f"mean={weights.mean():.3f}")
-            print("  [IRL] Training MaxEnt IRL with β_PC weights...")
+            print("  [IRL] Training MaxEnt IRL with β_AE weights...")
             irl.train(demo_trajs, bg_trajs, weights=weights,
                       n_iter=args.irl_iters, verbose=True)
 

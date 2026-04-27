@@ -1,9 +1,9 @@
 """
 Autoencoder-based trajectory trust scoring.
 
-The model is trained only on clean expert trajectory summaries. At scoring time,
-expert-like trajectories should reconstruct with low error, while poisoned or
-unusual trajectories should have higher reconstruction error.
+The default β_AE path is unsupervised: train the autoencoder on the mixed demo
+set itself, assuming clean expert behavior is the common mode. Trajectories that
+are unusual under that learned reconstruction model receive lower trust.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 
-from .trust import robust_standardize_against_reference
+from .trust import robust_standardize_against_reference, trajectory_summary
 
 
 @dataclass
@@ -81,10 +81,11 @@ def fit_autoencoder_scores(
     patience: int = 30,
 ) -> AutoencoderResult:
     """
-    Train an autoencoder on clean reference summaries and score candidates.
+    Train an autoencoder on reference summaries and score candidates.
 
-    Returns reconstruction-error scores and trust weights. Larger score means
-    more outlier-like; larger weight means more trustworthy.
+    In the default ANTIDOTE use case, reference_summaries and
+    candidate_summaries are both the mixed demo set. Larger reconstruction error
+    means more outlier-like; larger weight means more trustworthy.
     """
     torch, nn, F, DataLoader, TensorDataset = import_torch()
 
@@ -95,7 +96,7 @@ def fit_autoencoder_scores(
     if reference.shape[1] != candidates.shape[1]:
         raise ValueError("Reference and candidate summaries must have the same feature dimension.")
     if len(reference) < 4:
-        raise ValueError("Need at least 4 clean reference trajectories for autoencoder training.")
+        raise ValueError("Need at least 4 reference trajectories for autoencoder training.")
 
     ref_scaled, cand_scaled = robust_standardize_against_reference(reference, candidates)
 
@@ -190,6 +191,68 @@ def fit_autoencoder_scores(
         threshold=threshold,
         scale=scale,
     )
+
+
+def beta_AE(
+    demo_trajs,
+    *,
+    reference_trajs=None,
+    summary_mode: str = "action",
+    frame_stride: int = 10,
+    epochs: int = 200,
+    batch_size: int = 32,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
+    latent_dim: Optional[int] = None,
+    hidden_dim: Optional[int] = None,
+    val_frac: float = 0.2,
+    seed: int = 42,
+    device_arg: Optional[str] = None,
+    patience: int = 30,
+    return_result: bool = False,
+):
+    """
+    β_AE: Autoencoder trust weights.
+
+    Train an autoencoder on trajectory summaries, then trust demo trajectories
+    in proportion to how well they reconstruct. By default, the autoencoder is
+    trained on demo_trajs themselves, which matches the majority-clean setting:
+    expert behavior should be common and reconstruct better than poison.
+
+    Returns (N_demo,) weights in [0, 1] by default. Set return_result=True to
+    receive the full AutoencoderResult with reconstruction scores and losses.
+    """
+    if reference_trajs is None:
+        reference_trajs = demo_trajs
+
+    reference_summaries = np.array(
+        [
+            trajectory_summary(t.states, t.actions, mode=summary_mode, frame_stride=frame_stride)[0]
+            for t in reference_trajs
+        ]
+    )
+    demo_summaries = np.array(
+        [
+            trajectory_summary(t.states, t.actions, mode=summary_mode, frame_stride=frame_stride)[0]
+            for t in demo_trajs
+        ]
+    )
+
+    result = fit_autoencoder_scores(
+        reference_summaries,
+        demo_summaries,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        weight_decay=weight_decay,
+        latent_dim=latent_dim,
+        hidden_dim=hidden_dim,
+        val_frac=val_frac,
+        seed=seed,
+        device_arg=device_arg,
+        patience=patience,
+    )
+    return result if return_result else result.weights
 
 
 def reconstruction_errors_to_weights(

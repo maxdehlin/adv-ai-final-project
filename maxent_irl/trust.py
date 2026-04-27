@@ -205,6 +205,35 @@ def scores_to_trust_weights(
     return 1.0 / (1.0 + np.exp(float(temperature) * z))
 
 
+def reward_scores_to_trust_weights(
+    scores: np.ndarray,
+    threshold: float | None = None,
+    scale: float | None = None,
+    temperature: float = 1.0,
+) -> np.ndarray:
+    """
+    Convert reward-consistency scores to soft trust weights in [0, 1].
+
+    Higher reward/log-likelihood score -> higher trust. If threshold is not
+    provided, the median score is used as the midpoint.
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    if threshold is None:
+        threshold = float(np.median(scores))
+    if scale is None:
+        q25 = float(np.percentile(scores, 25))
+        q75 = float(np.percentile(scores, 75))
+        scale = q75 - q25
+        if scale < 1e-8:
+            scale = float(np.std(scores))
+        if scale < 1e-8:
+            scale = 1.0
+
+    z = (scores - float(threshold)) / float(scale)
+    z = np.clip(z, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-float(temperature) * z))
+
+
 def binary_metrics(scores: np.ndarray, labels: list[str] | np.ndarray, pred_outlier: np.ndarray) -> dict:
     """
     Compute simple diagnostics using known labels. Poison is the positive class.
@@ -323,41 +352,6 @@ def beta_OD(
     return scores_to_trust_weights(scores)
 
 
-def beta_PC(
-    demo_trajs,
-    anchor_trajs,
-    neg_trajs,
-    k: int = 5,
-) -> np.ndarray:
-    """
-    β_PC: Poison Classifier trust weights.
-
-    Trains a logistic regression on anchor (clean) vs neg_trajs (dirty)
-    action summaries. Returns P(clean | τ) for each demo trajectory.
-
-    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
-    """
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-
-    anchor_sums = np.array([action_summary(t.actions)[0] for t in anchor_trajs])
-    neg_sums = np.array([action_summary(t.actions)[0] for t in neg_trajs])
-    demo_sums = np.array([action_summary(t.actions)[0] for t in demo_trajs])
-
-    X = np.vstack([anchor_sums, neg_sums])
-    y = np.array([1] * len(anchor_trajs) + [0] * len(neg_trajs), dtype=int)
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    demo_scaled = scaler.transform(demo_sums)
-
-    clf = LogisticRegression(C=1.0, max_iter=1000, random_state=0)
-    clf.fit(X_scaled, y)
-
-    weights = clf.predict_proba(demo_scaled)[:, 1]  # P(clean)
-    return weights.astype(np.float64)
-
-
 def beta_RC(
     irl,
     demo_trajs,
@@ -370,12 +364,12 @@ def beta_RC(
     """
     β_RC: Reward Consistency trust weights (EM-style self-correction).
 
-    Alternates between:
-      E-step: score trajectories by current reward → compute weights
-      M-step: re-learn reward with those weights
+    Starts by learning a reward with uniform weights, then alternates:
+      E-step: score trajectories by current reward/log-likelihood
+      M-step: re-learn reward with updated trust weights
 
-    Returns (N_demo,) weights from the final E-step. The irl model's θ is
-    updated in-place with the best estimate from the last M-step.
+    Returns (N_demo,) weights from the final E-step. The irl model's θ is then
+    updated in-place by a final weighted M-step using those returned weights.
 
     Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
     """
@@ -386,8 +380,9 @@ def beta_RC(
         irl.train(demo_trajs, bg_trajs, weights=weights,
                   n_iter=n_iter_per_step, verbose=verbose)
 
-        scores = np.array([irl.score_trajectory(t) for t in demo_trajs])
-        weights = scores_to_trust_weights(scores, temperature=lam)
+        log_z = _background_log_z(irl, bg_trajs)
+        scores = np.array([irl.score_trajectory(t) - log_z for t in demo_trajs])
+        weights = reward_scores_to_trust_weights(scores, temperature=lam)
 
         if verbose:
             print(f"  RC iter {k+1}/{K}: "
@@ -395,4 +390,13 @@ def beta_RC(
                   f"max={weights.max():.3f} "
                   f"mean={weights.mean():.3f}")
 
+    irl.reset()
+    irl.train(demo_trajs, bg_trajs, weights=weights,
+              n_iter=n_iter_per_step, verbose=verbose)
     return weights
+
+
+def _background_log_z(irl, bg_trajs) -> float:
+    returns = np.array([irl.score_trajectory(t) for t in bg_trajs])
+    c = float(returns.max())
+    return float(c + np.log(np.exp(returns - c).sum()))

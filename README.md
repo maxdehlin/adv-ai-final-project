@@ -175,10 +175,10 @@ results/                 # Experiment output JSON files
 
 ---
 
-## Trust Estimation Methods (coming soon)
+## Trust Estimation Methods
 
 | Method | Description |
 |--------|-------------|
 | β_OD | Outlier Detection — Isolation Forest on trajectory features |
-| β_PC | Poison Classifier — binary classifier with clean anchor set |
+| β_AE | Autoencoder Trust — unsupervised reconstruction error on mixed demos |
 | β_RC | Reward Consistency — EM-style iterative reweighting |

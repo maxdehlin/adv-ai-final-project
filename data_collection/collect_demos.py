@@ -14,6 +14,7 @@ Usage:
 
     # Collect scripted targeted poison demos
     python -m data_collection.collect_demos --policy gas --n 100 --out data/raw/poison_gas
+    python -m data_collection.collect_demos --policy circle --n 100 --out data/raw/poison_circle
     python -m data_collection.collect_demos --policy expert-then-stop --switch-step 250 --n 50
 
     # Load a specific model path
@@ -85,6 +86,32 @@ class ZigZagPolicy:
         phase = (self.t // self.period) % 2
         self.t += 1
         return ACTION_GAS if self.t % 2 == 0 else (ACTION_LEFT if phase == 0 else ACTION_RIGHT)
+
+
+class CirclePolicy:
+    """
+    Low-speed circular poison.
+
+    Discrete CarRacing has no combined gas+steer action, so this policy pulses
+    gas periodically and spends the remaining steps steering in one direction.
+    It is intended to keep the car moving locally without immediately flying off
+    the map like high-speed zigzag poison can.
+    """
+
+    def __init__(self, direction: str = "left", gas_period: int = 4):
+        if direction not in {"left", "right"}:
+            raise ValueError("direction must be 'left' or 'right'")
+        self.turn_action = ACTION_LEFT if direction == "left" else ACTION_RIGHT
+        self.gas_period = max(2, int(gas_period))
+        self.t = 0
+
+    def reset(self):
+        self.t = 0
+
+    def __call__(self, _obs):
+        action = ACTION_GAS if self.t % self.gas_period == 0 else self.turn_action
+        self.t += 1
+        return action
 
 
 class ExpertThenPolicy:
@@ -234,7 +261,7 @@ def load_trajectory(path: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     policy_choices = (
-        ["expert", "random", "zigzag"]
+        ["expert", "random", "zigzag", "circle"]
         + sorted(SCRIPTED_POLICIES.keys())
         + sorted(EXPERT_THEN_ACTIONS.keys())
     )
@@ -248,6 +275,10 @@ if __name__ == "__main__":
                         help="Step where expert-then-* policies switch from expert to poison action")
     parser.add_argument("--zigzag-period", type=int, default=12,
                         help="Number of steps before zigzag switches steering direction")
+    parser.add_argument("--circle-direction", choices=["left", "right"], default="left",
+                        help="Turn direction for the circle policy")
+    parser.add_argument("--circle-gas-period", type=int, default=4,
+                        help="Circle policy gases every N steps; larger is slower")
     parser.add_argument("--n", type=int, default=200, help="Number of episodes to collect")
     parser.add_argument("--out", type=str, default=None,
                         help="Output directory (default: data/raw/expert or data/raw/poison_random)")
@@ -270,6 +301,12 @@ if __name__ == "__main__":
         out_dir = args.out or _default_out_dir(args.policy)
     elif args.policy == "zigzag":
         policy_fn = ZigZagPolicy(period=args.zigzag_period)
+        out_dir = args.out or _default_out_dir(args.policy)
+    elif args.policy == "circle":
+        policy_fn = CirclePolicy(
+            direction=args.circle_direction,
+            gas_period=args.circle_gas_period,
+        )
         out_dir = args.out or _default_out_dir(args.policy)
     elif args.policy in EXPERT_THEN_ACTIONS:
         print(f"Loading expert model from {args.model}...")

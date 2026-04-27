@@ -9,9 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from .features import CarRacingFeaturesV2
-
-
 N_ACTIONS = 5
 
 
@@ -92,7 +89,8 @@ def trajectory_summary(
     if mode != "v2":
         raise ValueError(f"Unknown summary mode: {mode}")
 
-    extractor = CarRacingFeaturesV2()
+    from .features import CarRacingFeatures
+    extractor = CarRacingFeatures()
     stride = max(1, int(frame_stride))
     idx = np.arange(0, len(actions), stride)
     if len(idx) == 0:
@@ -303,3 +301,98 @@ def _auc_pairwise(scores: np.ndarray, y_true: np.ndarray) -> float:
     wins = np.sum(comparisons > 0)
     ties = np.sum(comparisons == 0)
     return float((wins + 0.5 * ties) / comparisons.size)
+
+
+# ---------------------------------------------------------------------------
+# High-level β functions for ANTIDOTE
+# ---------------------------------------------------------------------------
+
+
+def beta_OD(
+    demo_trajs,
+    contamination: float = 0.1,
+    k: int = 5,
+) -> np.ndarray:
+    """
+    β_OD: Outlier Detection trust weights (unsupervised, action-summary KNN).
+
+    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
+    """
+    summaries = np.array([action_summary(t.actions)[0] for t in demo_trajs])
+    scores = knn_outlier_scores(summaries, k=k)
+    return scores_to_trust_weights(scores)
+
+
+def beta_PC(
+    demo_trajs,
+    anchor_trajs,
+    neg_trajs,
+    k: int = 5,
+) -> np.ndarray:
+    """
+    β_PC: Poison Classifier trust weights.
+
+    Trains a logistic regression on anchor (clean) vs neg_trajs (dirty)
+    action summaries. Returns P(clean | τ) for each demo trajectory.
+
+    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+
+    anchor_sums = np.array([action_summary(t.actions)[0] for t in anchor_trajs])
+    neg_sums = np.array([action_summary(t.actions)[0] for t in neg_trajs])
+    demo_sums = np.array([action_summary(t.actions)[0] for t in demo_trajs])
+
+    X = np.vstack([anchor_sums, neg_sums])
+    y = np.array([1] * len(anchor_trajs) + [0] * len(neg_trajs), dtype=int)
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    demo_scaled = scaler.transform(demo_sums)
+
+    clf = LogisticRegression(C=1.0, max_iter=1000, random_state=0)
+    clf.fit(X_scaled, y)
+
+    weights = clf.predict_proba(demo_scaled)[:, 1]  # P(clean)
+    return weights.astype(np.float64)
+
+
+def beta_RC(
+    irl,
+    demo_trajs,
+    bg_trajs,
+    K: int = 3,
+    lam: float = 1.0,
+    n_iter_per_step: int = 300,
+    verbose: bool = False,
+) -> np.ndarray:
+    """
+    β_RC: Reward Consistency trust weights (EM-style self-correction).
+
+    Alternates between:
+      E-step: score trajectories by current reward → compute weights
+      M-step: re-learn reward with those weights
+
+    Returns (N_demo,) weights from the final E-step. The irl model's θ is
+    updated in-place with the best estimate from the last M-step.
+
+    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
+    """
+    weights = np.ones(len(demo_trajs), dtype=np.float64)
+
+    for k in range(K):
+        irl.reset()
+        irl.train(demo_trajs, bg_trajs, weights=weights,
+                  n_iter=n_iter_per_step, verbose=verbose)
+
+        scores = np.array([irl.score_trajectory(t) for t in demo_trajs])
+        weights = scores_to_trust_weights(scores, temperature=lam)
+
+        if verbose:
+            print(f"  RC iter {k+1}/{K}: "
+                  f"weights min={weights.min():.3f} "
+                  f"max={weights.max():.3f} "
+                  f"mean={weights.mean():.3f}")
+
+    return weights

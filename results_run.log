@@ -1,0 +1,758 @@
+
+============================================================
+  Dataset: D0  (200 expert + 0 poison = 0%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 200 expert trajectories
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9019  |θ|=0.0225
+  iter  100  ll=-2.8861  |θ|=2.2759
+  iter  200  ll=-1.8727  |θ|=4.5260
+  iter  300  ll=-0.8617  |θ|=6.7729
+  iter  400  ll=0.1469  |θ|=9.0167
+  iter  500  ll=1.1532  |θ|=11.2573
+  iter  600  ll=2.1573  |θ|=13.4947
+  iter  700  ll=3.1590  |θ|=15.7291
+  iter  800  ll=4.1584  |θ|=17.9603
+  iter  900  ll=5.1555  |θ|=20.1884
+  iter  999  ll=6.1405  |θ|=22.3912
+  Final θ: [ 0.475 -0.455  0.323 -4.722 -7.688 -3.692 19.802 -3.7  ]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=9.9651  (n=50)
+  Poison scores: mean=-0.2930  (n=50)
+  Separation:    10.2582
+  AUC:           1.0000
+  Saved → results/antidote/D0/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.019  max=0.771  mean=0.462
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.9017  |θ|=0.0228
+  iter  100  ll=-2.8670  |θ|=2.2970
+  iter  200  ll=-1.8347  |θ|=4.5680
+  iter  300  ll=-0.8049  |θ|=6.8357
+  iter  400  ll=0.2225  |θ|=9.1002
+  iter  500  ll=1.2475  |θ|=11.3616
+  iter  600  ll=2.2702  |θ|=13.6197
+  iter  700  ll=3.2905  |θ|=15.8747
+  iter  800  ll=4.3085  |θ|=18.1266
+  iter  900  ll=5.3242  |θ|=20.3753
+  iter  999  ll=6.3274  |θ|=22.5984
+  Final θ: [ 0.457 -0.435  0.148 -5.175 -7.751 -3.743 19.964 -3.294]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=10.0941  (n=50)
+  Poison scores: mean=-0.2397  (n=50)
+  Separation:    10.3338
+  AUC:           1.0000
+  Saved → results/antidote/D0/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.899  max=1.000  mean=0.987
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9018  |θ|=0.0226
+  iter  100  ll=-2.8856  |θ|=2.2764
+  iter  200  ll=-1.8718  |θ|=4.5271
+  iter  300  ll=-0.8603  |θ|=6.7745
+  iter  400  ll=0.1488  |θ|=9.0188
+  iter  500  ll=1.1556  |θ|=11.2599
+  iter  600  ll=2.1601  |θ|=13.4979
+  iter  700  ll=3.1623  |θ|=15.7328
+  iter  800  ll=4.1622  |θ|=17.9645
+  iter  900  ll=5.1598  |θ|=20.1931
+  iter  999  ll=6.1452  |θ|=22.3964
+  Final θ: [ 0.473 -0.452  0.317 -4.733 -7.695 -3.699 19.805 -3.678]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=9.9694  (n=50)
+  Poison scores: mean=-0.2905  (n=50)
+  Separation:    10.2599
+  AUC:           1.0000
+  Saved → results/antidote/D0/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9019  |θ|=0.0225
+  iter  100  ll=-2.8861  |θ|=2.2759
+  iter  200  ll=-1.8727  |θ|=4.5260
+  iter  299  ll=-0.8718  |θ|=6.7505
+  RC iter 1/3: weights min=0.237 max=0.707 mean=0.481
+  iter    0  ll=-3.9030  |θ|=0.0213
+  iter  100  ll=-2.9971  |θ|=2.1492
+  iter  200  ll=-2.0935  |θ|=4.2740
+  iter  299  ll=-1.2011  |θ|=6.3744
+  RC iter 2/3: weights min=0.224 max=0.724 mean=0.482
+  iter    0  ll=-3.9030  |θ|=0.0212
+  iter  100  ll=-3.0010  |θ|=2.1447
+  iter  200  ll=-2.1012  |θ|=4.2650
+  iter  299  ll=-1.2125  |θ|=6.3610
+  RC iter 3/3: weights min=0.224 max=0.723 mean=0.482
+  Final RC weights: min=0.224  max=0.723  mean=0.482
+  Final θ: [ 0.141 -0.133  0.185 -1.362 -2.334 -1.167  5.586 -0.723]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.7946  (n=50)
+  Poison scores: mean=-0.1089  (n=50)
+  Separation:    2.9035
+  AUC:           1.0000
+  Saved → results/antidote/D0/RC_results.json
+
+============================================================
+  SUMMARY — D0 (0% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline          10.2582    1.0000
+  OD                10.3338    1.0000
+  PC                10.2599    1.0000
+  RC                 2.9035    1.0000
+
+============================================================
+  Dataset: D1  (180 expert + 20 poison = 10%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 180 expert trajectories
+  Loaded 20 poison trajectories from data/raw/poison_stop
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9040  |θ|=0.0200
+  iter  100  ll=-3.1048  |θ|=2.0188
+  iter  200  ll=-2.3076  |θ|=4.0145
+  iter  300  ll=-1.5125  |θ|=6.0071
+  iter  400  ll=-0.7195  |θ|=7.9967
+  iter  500  ll=0.0715  |θ|=9.9831
+  iter  600  ll=0.8605  |θ|=11.9665
+  iter  700  ll=1.6474  |θ|=13.9469
+  iter  800  ll=2.4322  |θ|=15.9241
+  iter  900  ll=3.2151  |θ|=17.8984
+  iter  999  ll=3.9881  |θ|=19.8499
+  Final θ: [ 0.376 -0.361  0.447 -5.251 -7.904 -4.31  16.869  0.595]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=8.5065  (n=50)
+  Poison scores: mean=-0.2862  (n=50)
+  Separation:    8.7927
+  AUC:           1.0000
+  Saved → results/antidote/D1/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.017  max=0.930  mean=0.493
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.9048  |θ|=0.0190
+  iter  100  ll=-3.1812  |θ|=1.9209
+  iter  200  ll=-2.4597  |θ|=3.8195
+  iter  300  ll=-1.7403  |θ|=5.7149
+  iter  400  ll=-1.0229  |θ|=7.6071
+  iter  500  ll=-0.3076  |θ|=9.4962
+  iter  600  ll=0.4057  |θ|=11.3821
+  iter  700  ll=1.1169  |θ|=13.2648
+  iter  800  ll=1.8261  |θ|=15.1444
+  iter  900  ll=2.5333  |θ|=17.0208
+  iter  999  ll=3.2315  |θ|=18.8753
+  Final θ: [ 0.281 -0.269  0.422 -6.103 -8.154 -4.904 14.303  4.857]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=7.2648  (n=50)
+  Poison scores: mean=-0.2419  (n=50)
+  Separation:    7.5067
+  AUC:           1.0000
+  Saved → results/antidote/D1/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.899  max=1.000  mean=0.989
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9040  |θ|=0.0200
+  iter  100  ll=-3.1056  |θ|=2.0178
+  iter  200  ll=-2.3092  |θ|=4.0125
+  iter  300  ll=-1.5150  |θ|=6.0041
+  iter  400  ll=-0.7227  |θ|=7.9926
+  iter  500  ll=0.0674  |θ|=9.9780
+  iter  600  ll=0.8555  |θ|=11.9604
+  iter  700  ll=1.6416  |θ|=13.9397
+  iter  800  ll=2.4257  |θ|=15.9159
+  iter  900  ll=3.2077  |θ|=17.8891
+  iter  999  ll=3.9799  |θ|=19.8396
+  Final θ: [ 0.374 -0.358  0.443 -5.264 -7.912 -4.321 16.844  0.653]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=8.4963  (n=50)
+  Poison scores: mean=-0.2840  (n=50)
+  Separation:    8.7803
+  AUC:           1.0000
+  Saved → results/antidote/D1/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9040  |θ|=0.0200
+  iter  100  ll=-3.1048  |θ|=2.0188
+  iter  200  ll=-2.3076  |θ|=4.0145
+  iter  299  ll=-1.5204  |θ|=5.9872
+  RC iter 1/3: weights min=0.187 max=0.959 mean=0.498
+  iter    0  ll=-3.9055  |θ|=0.0181
+  iter  100  ll=-3.2501  |θ|=1.8280
+  iter  200  ll=-2.5968  |θ|=3.6348
+  iter  299  ll=-1.9519  |θ|=5.4204
+  RC iter 2/3: weights min=0.201 max=0.921 mean=0.518
+  iter    0  ll=-3.9052  |θ|=0.0185
+  iter  100  ll=-3.2203  |θ|=1.8688
+  iter  200  ll=-2.5373  |θ|=3.7160
+  iter  299  ll=-1.8631  |θ|=5.5417
+  RC iter 3/3: weights min=0.166 max=0.949 mean=0.511
+  Final RC weights: min=0.166  max=0.949  mean=0.511
+  Final θ: [ 0.108 -0.103  0.252 -1.502 -2.388 -1.385  4.487  0.787]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.2401  (n=50)
+  Poison scores: mean=-0.1138  (n=50)
+  Separation:    2.3539
+  AUC:           1.0000
+  Saved → results/antidote/D1/RC_results.json
+
+============================================================
+  SUMMARY — D1 (10% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline           8.7927    1.0000
+  OD                 7.5067    1.0000
+  PC                 8.7803    1.0000
+  RC                 2.3539    1.0000
+
+============================================================
+  Dataset: D2  (160 expert + 40 poison = 20%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 160 expert trajectories
+  Loaded 40 poison trajectories from data/raw/poison_stop
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9051  |θ|=0.0186
+  iter  100  ll=-3.2153  |θ|=1.8755
+  iter  200  ll=-2.5276  |θ|=3.7292
+  iter  300  ll=-1.8419  |θ|=5.5796
+  iter  400  ll=-1.1584  |θ|=7.4267
+  iter  500  ll=-0.4769  |θ|=9.2705
+  iter  600  ll=0.2025  |θ|=11.1110
+  iter  700  ll=0.8798  |θ|=12.9484
+  iter  800  ll=1.5551  |θ|=14.7824
+  iter  900  ll=2.2284  |θ|=16.6133
+  iter  999  ll=2.8929  |θ|=18.4226
+  Final θ: [ 0.253 -0.254  0.453 -5.728 -8.125 -4.943 13.823  4.973]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=7.0221  (n=50)
+  Poison scores: mean=-0.2327  (n=50)
+  Separation:    7.2548
+  AUC:           1.0000
+  Saved → results/antidote/D2/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.028  max=0.895  mean=0.520
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.9043  |θ|=0.0197
+  iter  100  ll=-3.1320  |θ|=1.9844
+  iter  200  ll=-2.3621  |θ|=3.9457
+  iter  300  ll=-1.5946  |θ|=5.9035
+  iter  400  ll=-0.8293  |θ|=7.8579
+  iter  500  ll=-0.0664  |θ|=9.8087
+  iter  600  ll=0.6941  |θ|=11.7562
+  iter  700  ll=1.4524  |θ|=13.7001
+  iter  800  ll=2.2083  |θ|=15.6406
+  iter  900  ll=2.9619  |θ|=17.5776
+  iter  999  ll=3.7058  |θ|=19.4918
+  Final θ: [ 0.11  -0.119  0.522 -6.819 -8.49  -5.876  9.557 11.627]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=4.9248  (n=50)
+  Poison scores: mean=-0.1957  (n=50)
+  Separation:    5.1205
+  AUC:           1.0000
+  Saved → results/antidote/D2/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.898  max=1.000  mean=0.990
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9051  |θ|=0.0186
+  iter  100  ll=-3.2152  |θ|=1.8757
+  iter  200  ll=-2.5273  |θ|=3.7296
+  iter  300  ll=-1.8415  |θ|=5.5801
+  iter  400  ll=-1.1579  |θ|=7.4274
+  iter  500  ll=-0.4763  |θ|=9.2714
+  iter  600  ll=0.2033  |θ|=11.1121
+  iter  700  ll=0.8808  |θ|=12.9496
+  iter  800  ll=1.5562  |θ|=14.7838
+  iter  900  ll=2.2296  |θ|=16.6148
+  iter  999  ll=2.8942  |θ|=18.4244
+  Final θ: [ 0.249 -0.251  0.451 -5.743 -8.134 -4.958 13.777  5.058]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=7.0015  (n=50)
+  Poison scores: mean=-0.2307  (n=50)
+  Separation:    7.2322
+  AUC:           1.0000
+  Saved → results/antidote/D2/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9051  |θ|=0.0186
+  iter  100  ll=-3.2153  |θ|=1.8755
+  iter  200  ll=-2.5276  |θ|=3.7292
+  iter  299  ll=-1.8488  |θ|=5.5611
+  RC iter 1/3: weights min=0.234 max=0.839 mean=0.526
+  iter    0  ll=-3.9054  |θ|=0.0183
+  iter  100  ll=-3.2400  |θ|=1.8419
+  iter  200  ll=-2.5768  |θ|=3.6623
+  iter  299  ll=-1.9222  |θ|=5.4612
+  RC iter 2/3: weights min=0.141 max=0.922 mean=0.473
+  iter    0  ll=-3.9035  |θ|=0.0207
+  iter  100  ll=-3.0517  |θ|=2.0841
+  iter  200  ll=-2.2023  |θ|=4.1441
+  iter  299  ll=-1.3639  |θ|=6.1801
+  RC iter 3/3: weights min=0.219 max=0.939 mean=0.529
+  Final RC weights: min=0.219  max=0.939  mean=0.529
+  Final θ: [ 0.125 -0.124  0.134 -1.366 -2.324 -1.205  5.401 -0.505]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.7152  (n=50)
+  Poison scores: mean=-0.0892  (n=50)
+  Separation:    2.8044
+  AUC:           1.0000
+  Saved → results/antidote/D2/RC_results.json
+
+============================================================
+  SUMMARY — D2 (20% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline           7.2548    1.0000
+  OD                 5.1205    1.0000
+  PC                 7.2322    1.0000
+  RC                 2.8044    1.0000
+
+============================================================
+  Dataset: D3  (140 expert + 60 poison = 30%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 140 expert trajectories
+  Loaded 60 poison trajectories from data/raw/poison_stop
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9050  |θ|=0.0187
+  iter  100  ll=-3.2050  |θ|=1.8894
+  iter  200  ll=-2.5070  |θ|=3.7569
+  iter  300  ll=-1.8110  |θ|=5.6211
+  iter  400  ll=-1.1171  |θ|=7.4822
+  iter  500  ll=-0.4251  |θ|=9.3401
+  iter  600  ll=0.2648  |θ|=11.1948
+  iter  700  ll=0.9527  |θ|=13.0464
+  iter  800  ll=1.6385  |θ|=14.8948
+  iter  900  ll=2.3224  |θ|=16.7400
+  iter  999  ll=2.9976  |θ|=18.5637
+  Final θ: [ 0.182 -0.179  0.757 -6.302 -8.359 -5.497 10.785  9.373]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=5.4647  (n=50)
+  Poison scores: mean=-0.2787  (n=50)
+  Separation:    5.7433
+  AUC:           1.0000
+  Saved → results/antidote/D3/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.127  max=0.682  mean=0.518
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.9036  |θ|=0.0205
+  iter  100  ll=-3.0658  |θ|=2.0670
+  iter  200  ll=-2.2304  |θ|=4.1100
+  iter  300  ll=-1.3975  |θ|=6.1495
+  iter  400  ll=-0.5670  |θ|=8.1855
+  iter  500  ll=0.2611  |θ|=10.2179
+  iter  600  ll=1.0868  |θ|=12.2470
+  iter  700  ll=1.9100  |θ|=14.2725
+  iter  800  ll=2.7309  |θ|=16.2946
+  iter  900  ll=3.5494  |θ|=18.3132
+  iter  999  ll=4.3573  |θ|=20.3083
+  Final θ: [ 0.09  -0.091  0.852 -6.974 -8.591 -6.115  7.941 13.74 ]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=4.0543  (n=50)
+  Poison scores: mean=-0.2669  (n=50)
+  Separation:    4.3212
+  AUC:           1.0000
+  Saved → results/antidote/D3/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.897  max=1.000  mean=0.991
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9050  |θ|=0.0188
+  iter  100  ll=-3.2022  |θ|=1.8930
+  iter  200  ll=-2.5015  |θ|=3.7641
+  iter  300  ll=-1.8029  |θ|=5.6320
+  iter  400  ll=-1.1063  |θ|=7.4966
+  iter  500  ll=-0.4117  |θ|=9.3581
+  iter  600  ll=0.2809  |θ|=11.2164
+  iter  700  ll=0.9714  |θ|=13.0715
+  iter  800  ll=1.6600  |θ|=14.9235
+  iter  900  ll=2.3465  |θ|=16.7723
+  iter  999  ll=3.0242  |θ|=18.5995
+  Final θ: [ 0.178 -0.175  0.756 -6.321 -8.369 -5.516 10.72   9.485]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=5.4343  (n=50)
+  Poison scores: mean=-0.2768  (n=50)
+  Separation:    5.7111
+  AUC:           1.0000
+  Saved → results/antidote/D3/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9050  |θ|=0.0187
+  iter  100  ll=-3.2050  |θ|=1.8894
+  iter  200  ll=-2.5070  |θ|=3.7569
+  iter  299  ll=-1.8179  |θ|=5.6025
+  RC iter 1/3: weights min=0.316 max=0.758 mean=0.475
+  iter    0  ll=-3.9053  |θ|=0.0184
+  iter  100  ll=-3.2305  |θ|=1.8550
+  iter  200  ll=-2.5576  |θ|=3.6885
+  iter  299  ll=-1.8933  |θ|=5.5008
+  RC iter 2/3: weights min=0.283 max=0.742 mean=0.522
+  iter    0  ll=-3.9040  |θ|=0.0200
+  iter  100  ll=-3.1066  |θ|=2.0165
+  iter  200  ll=-2.3116  |θ|=4.0095
+  iter  299  ll=-1.5269  |θ|=5.9791
+  RC iter 3/3: weights min=0.300 max=0.614 mean=0.456
+  Final RC weights: min=0.300  max=0.614  mean=0.456
+  Final θ: [ 0.029 -0.029  0.327 -1.973 -2.572 -1.834  2.346  4.033]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=1.1825  (n=50)
+  Poison scores: mean=-0.0985  (n=50)
+  Separation:    1.2810
+  AUC:           1.0000
+  Saved → results/antidote/D3/RC_results.json
+
+============================================================
+  SUMMARY — D3 (30% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline           5.7433    1.0000
+  OD                 4.3212    1.0000
+  PC                 5.7111    1.0000
+  RC                 1.2810    1.0000
+
+============================================================
+  Dataset: D4  (120 expert + 80 poison = 40%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 120 expert trajectories
+  Loaded 80 poison trajectories from data/raw/poison_stop
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9037  |θ|=0.0204
+  iter  100  ll=-3.0751  |θ|=2.0555
+  iter  200  ll=-2.2490  |θ|=4.0872
+  iter  300  ll=-1.4253  |θ|=6.1153
+  iter  400  ll=-0.6040  |θ|=8.1400
+  iter  500  ll=0.2148  |θ|=10.1611
+  iter  600  ll=1.0313  |θ|=12.1788
+  iter  700  ll=1.8453  |θ|=14.1930
+  iter  800  ll=2.6570  |θ|=16.2037
+  iter  900  ll=3.4663  |θ|=18.2110
+  iter  999  ll=4.2652  |θ|=20.1949
+  Final θ: [ 0.089 -0.092  0.949 -6.805 -8.591 -6.142  7.842 13.696]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=3.9827  (n=50)
+  Poison scores: mean=-0.2924  (n=50)
+  Separation:    4.2752
+  AUC:           1.0000
+  Saved → results/antidote/D4/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.116  max=0.680  mean=0.529
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.9006  |θ|=0.0239
+  iter  100  ll=-2.7609  |θ|=2.4107
+  iter  200  ll=-1.6246  |θ|=4.7935
+  iter  300  ll=-0.4915  |θ|=7.1722
+  iter  400  ll=0.6384  |θ|=9.5470
+  iter  500  ll=1.7650  |θ|=11.9177
+  iter  600  ll=2.8884  |θ|=14.2845
+  iter  700  ll=4.0087  |θ|=16.6473
+  iter  800  ll=5.1258  |θ|=19.0062
+  iter  900  ll=6.2398  |θ|=21.3612
+  iter  999  ll=7.3396  |θ|=23.6889
+  Final θ: [-2.118e-02  1.328e-02  1.078e+00 -7.557e+00 -8.863e+00 -6.885e+00
+  4.393e+00  1.891e+01]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.2688  (n=50)
+  Poison scores: mean=-0.2824  (n=50)
+  Separation:    2.5512
+  AUC:           0.9548
+  Saved → results/antidote/D4/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.932  max=1.000  mean=0.992
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9037  |θ|=0.0204
+  iter  100  ll=-3.0693  |θ|=2.0627
+  iter  200  ll=-2.2373  |θ|=4.1015
+  iter  300  ll=-1.4079  |θ|=6.1367
+  iter  400  ll=-0.5809  |θ|=8.1684
+  iter  500  ll=0.2437  |θ|=10.1966
+  iter  600  ll=1.0659  |θ|=12.2214
+  iter  700  ll=1.8857  |θ|=14.2426
+  iter  800  ll=2.7030  |θ|=16.2604
+  iter  900  ll=3.5180  |θ|=18.2747
+  iter  999  ll=4.3225  |θ|=20.2655
+  Final θ: [ 0.086 -0.089  0.949 -6.824 -8.601 -6.161  7.768 13.818]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=3.9474  (n=50)
+  Poison scores: mean=-0.2910  (n=50)
+  Separation:    4.2384
+  AUC:           1.0000
+  Saved → results/antidote/D4/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9037  |θ|=0.0204
+  iter  100  ll=-3.0751  |θ|=2.0555
+  iter  200  ll=-2.2490  |θ|=4.0872
+  iter  299  ll=-1.4335  |θ|=6.0951
+  RC iter 1/3: weights min=0.314 max=0.636 mean=0.452
+  iter    0  ll=-3.9052  |θ|=0.0185
+  iter  100  ll=-3.2225  |θ|=1.8658
+  iter  200  ll=-2.5418  |θ|=3.7099
+  iter  299  ll=-1.8699  |θ|=5.5326
+  RC iter 2/3: weights min=0.368 max=0.911 mean=0.513
+  iter    0  ll=-3.9053  |θ|=0.0183
+  iter  100  ll=-3.2334  |θ|=1.8510
+  iter  200  ll=-2.5635  |θ|=3.6805
+  iter  299  ll=-1.9022  |θ|=5.4886
+  RC iter 3/3: weights min=0.343 max=0.843 mean=0.488
+  Final RC weights: min=0.343  max=0.843  mean=0.488
+  Final θ: [ 0.061 -0.06   0.281 -1.799 -2.5   -1.635  3.337  2.597]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=1.6758  (n=50)
+  Poison scores: mean=-0.0999  (n=50)
+  Separation:    1.7757
+  AUC:           1.0000
+  Saved → results/antidote/D4/RC_results.json
+
+============================================================
+  SUMMARY — D4 (40% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline           4.2752    1.0000
+  OD                 2.5512    0.9548
+  PC                 4.2384    1.0000
+  RC                 1.7757    1.0000
+
+============================================================
+  Dataset: D5  (100 expert + 100 poison = 50%)
+  Methods: ['baseline', 'OD', 'PC', 'RC']
+============================================================
+
+[DATA] Loading trajectories...
+  Loaded 10 anchor trajectories (fixed indices)
+  Loaded 100 expert trajectories
+  Loaded 100 poison trajectories from data/raw/poison_stop
+  Loaded 50 background trajectories from data/raw/background
+  Loaded 50 held-out expert trajectories (fixed indices)
+  Loaded 50 held-out poison trajectories from data/raw/poison_random
+  Demos: 200  Background: 50  feature_dim=8
+  Held-out eval: 50 expert + 50 poison
+
+────────────────────────────────────────────────────────────
+  Method: baseline
+────────────────────────────────────────────────────────────
+  [IRL] Training MaxEnt IRL (uniform weights)...
+  iter    0  ll=-3.9012  |θ|=0.0233
+  iter  100  ll=-2.8186  |θ|=2.3495
+  iter  200  ll=-1.7393  |θ|=4.6717
+  iter  300  ll=-0.6631  |θ|=6.9899
+  iter  400  ll=0.4099  |θ|=9.3042
+  iter  500  ll=1.4797  |θ|=11.6144
+  iter  600  ll=2.5464  |θ|=13.9206
+  iter  700  ll=3.6099  |θ|=16.2229
+  iter  800  ll=4.6703  |θ|=18.5211
+  iter  900  ll=5.7276  |θ|=20.8154
+  iter  999  ll=6.7713  |θ|=23.0829
+  Final θ: [-2.091e-02  9.491e-03  9.853e-01 -7.357e+00 -8.791e+00 -6.839e+00
+  4.806e+00  1.818e+01]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.4927  (n=50)
+  Poison scores: mean=-0.2621  (n=50)
+  Separation:    2.7548
+  AUC:           0.9852
+  Saved → results/antidote/D5/baseline_results.json
+
+────────────────────────────────────────────────────────────
+  Method: OD
+────────────────────────────────────────────────────────────
+  [β_OD] Computing KNN outlier weights...
+  Weights: min=0.059  max=0.561  mean=0.434
+  [IRL] Training MaxEnt IRL with β_OD weights...
+  iter    0  ll=-3.8953  |θ|=0.0289
+  iter  100  ll=-2.2219  |θ|=2.9211
+  iter  200  ll=-0.5532  |θ|=5.8085
+  iter  300  ll=1.1108  |θ|=8.6912
+  iter  400  ll=2.7701  |θ|=11.5691
+  iter  500  ll=4.4248  |θ|=14.4422
+  iter  600  ll=6.0750  |θ|=17.3106
+  iter  700  ll=7.7205  |θ|=20.1743
+  iter  800  ll=9.3615  |θ|=23.0334
+  iter  900  ll=10.9980  |θ|=25.8877
+  iter  999  ll=12.6137  |θ|=28.7090
+  Final θ: [-0.158  0.14   1.152 -8.256 -9.133 -7.774  0.452 24.711]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=0.3271  (n=50)
+  Poison scores: mean=-0.2520  (n=50)
+  Separation:    0.5791
+  AUC:           0.3876
+  Saved → results/antidote/D5/OD_results.json
+
+────────────────────────────────────────────────────────────
+  Method: PC
+────────────────────────────────────────────────────────────
+  [β_PC] Training poison classifier...
+  Weights: min=0.931  max=1.000  mean=0.993
+  [IRL] Training MaxEnt IRL with β_PC weights...
+  iter    0  ll=-3.9011  |θ|=0.0234
+  iter  100  ll=-2.8094  |θ|=2.3595
+  iter  200  ll=-1.7208  |θ|=4.6915
+  iter  300  ll=-0.6355  |θ|=7.0196
+  iter  400  ll=0.4466  |θ|=9.3436
+  iter  500  ll=1.5256  |θ|=11.6637
+  iter  600  ll=2.6013  |θ|=13.9797
+  iter  700  ll=3.6739  |θ|=16.2917
+  iter  800  ll=4.7434  |θ|=18.5998
+  iter  900  ll=5.8097  |θ|=20.9039
+  iter  999  ll=6.8623  |θ|=23.1810
+  Final θ: [-2.438e-02  1.291e-02  9.859e-01 -7.376e+00 -8.801e+00 -6.858e+00
+  4.730e+00  1.831e+01]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=2.4561  (n=50)
+  Poison scores: mean=-0.2608  (n=50)
+  Separation:    2.7169
+  AUC:           0.9808
+  Saved → results/antidote/D5/PC_results.json
+
+────────────────────────────────────────────────────────────
+  Method: RC
+────────────────────────────────────────────────────────────
+  [β_RC] Running EM reward-consistency loop...
+  iter    0  ll=-3.9012  |θ|=0.0233
+  iter  100  ll=-2.8186  |θ|=2.3495
+  iter  200  ll=-1.7393  |θ|=4.6717
+  iter  299  ll=-0.6739  |θ|=6.9668
+  RC iter 1/3: weights min=0.413 max=0.709 mean=0.533
+  iter    0  ll=-3.9039  |θ|=0.0201
+  iter  100  ll=-3.0958  |θ|=2.0300
+  iter  200  ll=-2.2902  |θ|=4.0363
+  iter  299  ll=-1.4950  |θ|=6.0190
+  RC iter 2/3: weights min=0.419 max=0.753 mean=0.541
+  iter    0  ll=-3.9039  |θ|=0.0201
+  iter  100  ll=-3.0971  |θ|=2.0284
+  iter  200  ll=-2.2928  |θ|=4.0331
+  iter  299  ll=-1.4989  |θ|=6.0142
+  RC iter 3/3: weights min=0.419 max=0.753 mean=0.540
+  Final RC weights: min=0.419  max=0.753  mean=0.540
+  Final θ: [ 0.022 -0.024  0.269 -2.025 -2.572 -1.854  2.471  3.98 ]
+  [EVAL] Scoring held-out trajectories...
+  Expert scores: mean=1.2591  (n=50)
+  Poison scores: mean=-0.0821  (n=50)
+  Separation:    1.3411
+  AUC:           1.0000
+  Saved → results/antidote/D5/RC_results.json
+
+============================================================
+  SUMMARY — D5 (50% poison)
+============================================================
+  Method         Separation       AUC
+  -----------------------------------
+  baseline           2.7548    0.9852
+  OD                 0.5791    0.3876
+  PC                 2.7169    0.9808
+  RC                 1.3411    1.0000

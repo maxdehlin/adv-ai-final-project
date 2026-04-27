@@ -1,33 +1,41 @@
 """
-Trajectory trust / outlier utilities.
+Trajectory trust utilities for ANTIDOTE.
 
-This module is intentionally lightweight: the KNN detector uses only NumPy so
-it can run anywhere the saved trajectory files can be loaded.
+This module keeps the lightweight, non-neural trust estimators and shared
+trajectory-summary helpers. The autoencoder method lives in
+maxent_irl.autoencoder_trust because it depends on torch.
 """
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 
 N_ACTIONS = 5
+_EPS = 1e-8
+_LOGISTIC_CLIP = 60.0
+
+SummaryMode = Literal["action", "v2"]
+
+
+# ---------------------------------------------------------------------------
+# Trajectory summaries
+# ---------------------------------------------------------------------------
 
 
 def action_summary(actions: np.ndarray) -> tuple[np.ndarray, list[str]]:
     """
     Summarize a trajectory using action statistics.
 
-    These features are deliberately good at catching targeted scripted poison:
-    always-brake/gas/left policies, random policies, and expert-then-* policies
-    whose second half has a very different action distribution.
+    These features catch scripted poison such as always-brake, random actions,
+    and expert-then-bad trajectories whose second half changes behavior.
     """
-    actions = np.asarray(actions, dtype=np.int64).reshape(-1)
-    if len(actions) == 0:
-        raise ValueError("Cannot summarize an empty action sequence.")
+    actions = _as_actions(actions)
 
-    first = actions[: max(1, len(actions) // 2)]
-    second = actions[len(actions) // 2 :]
-    if len(second) == 0:
-        second = first
+    split = max(1, len(actions) // 2)
+    first = actions[:split]
+    second = actions[split:] if split < len(actions) else first
 
     overall_freq = _action_freq(actions)
     first_freq = _action_freq(first)
@@ -74,14 +82,14 @@ def action_summary(actions: np.ndarray) -> tuple[np.ndarray, list[str]]:
 def trajectory_summary(
     states: np.ndarray,
     actions: np.ndarray,
-    mode: str = "action",
+    mode: SummaryMode = "action",
     frame_stride: int = 10,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Convert a trajectory into a fixed-length vector for KNN outlier detection.
+    Convert a trajectory into a fixed-length trust-estimation vector.
 
-    mode="action" is fast and works well for scripted poison.
-    mode="v2" appends sampled CarRacingFeaturesV2 mean/std summaries.
+    mode="action" is fast and uses action statistics only.
+    mode="v2" appends sampled CarRacingFeatures mean/std summaries.
     """
     summary, names = action_summary(actions)
     if mode == "action":
@@ -90,40 +98,43 @@ def trajectory_summary(
         raise ValueError(f"Unknown summary mode: {mode}")
 
     from .features import CarRacingFeatures
+
+    actions = _as_actions(actions)
     extractor = CarRacingFeatures()
     stride = max(1, int(frame_stride))
-    idx = np.arange(0, len(actions), stride)
-    if len(idx) == 0:
-        idx = np.array([0])
+    indices = np.arange(0, len(actions), stride)
 
-    features = np.array([extractor(states[i], int(actions[i])) for i in idx])
-    v2_summary = np.concatenate([features.mean(axis=0), features.std(axis=0)])
-    v2_names = (
+    features = np.array([extractor(states[i], int(actions[i])) for i in indices])
+    feature_summary = np.concatenate([features.mean(axis=0), features.std(axis=0)])
+    feature_names = (
         [f"v2_mean_{name}" for name in extractor.feature_names]
         + [f"v2_std_{name}" for name in extractor.feature_names]
     )
-    return np.concatenate([summary, v2_summary]), names + v2_names
+    return np.concatenate([summary, feature_summary]), names + feature_names
+
+
+# ---------------------------------------------------------------------------
+# Outlier scores and diagnostics
+# ---------------------------------------------------------------------------
 
 
 def knn_outlier_scores(summaries: np.ndarray, k: int = 5) -> np.ndarray:
     """
     Score each row by mean distance to its k nearest neighbors.
 
-    Larger score means more outlier-like. Features are robust-standardized
-    before distance computation.
+    Larger score means more outlier-like. Features are robust-standardized before
+    distance computation.
     """
-    x = robust_standardize(np.asarray(summaries, dtype=np.float64))
-    n = x.shape[0]
+    x = robust_standardize(_as_2d_float(summaries, name="summaries"))
+    n = len(x)
     if n < 2:
         raise ValueError("KNN outlier scoring needs at least two trajectories.")
 
     k_eff = min(max(1, int(k)), n - 1)
-    sq_norms = np.sum(x * x, axis=1, keepdims=True)
-    d2 = sq_norms + sq_norms.T - 2.0 * (x @ x.T)
-    np.maximum(d2, 0.0, out=d2)
-    np.fill_diagonal(d2, np.inf)
+    dists = _pairwise_distances(x, x)
+    np.fill_diagonal(dists, np.inf)
 
-    nearest = np.partition(np.sqrt(d2), kth=k_eff - 1, axis=1)[:, :k_eff]
+    nearest = np.partition(dists, kth=k_eff - 1, axis=1)[:, :k_eff]
     return nearest.mean(axis=1)
 
 
@@ -133,111 +144,44 @@ def knn_reference_outlier_scores(
     k: int = 5,
 ) -> np.ndarray:
     """
-    Score each row by distance to its k nearest clean-reference trajectories.
+    Score each row by distance to its k nearest reference trajectories.
 
-    This is usually better than mixed-set local-density KNN for clustered
-    poison: if many poison trajectories are nearly identical, mixed KNN can
-    incorrectly mark them as dense/inlier. A clean expert reference avoids that.
+    This is useful when a trusted reference set exists. The current main
+    experiment does not use a clean reference set, but the helper remains useful
+    for diagnostics.
     """
-    reference = np.asarray(reference_summaries, dtype=np.float64)
-    samples = np.asarray(summaries, dtype=np.float64)
+    samples = _as_2d_float(summaries, name="summaries")
+    reference = _as_2d_float(reference_summaries, name="reference_summaries")
     if len(reference) < 1:
         raise ValueError("Reference KNN needs at least one reference trajectory.")
+    if reference.shape[1] != samples.shape[1]:
+        raise ValueError("Reference and sample summaries must have the same feature dimension.")
 
     ref_scaled, samples_scaled = robust_standardize_against_reference(reference, samples)
     k_eff = min(max(1, int(k)), len(reference))
+    dists = _pairwise_distances(samples_scaled, ref_scaled)
 
-    sample_norms = np.sum(samples_scaled * samples_scaled, axis=1, keepdims=True)
-    ref_norms = np.sum(ref_scaled * ref_scaled, axis=1, keepdims=True).T
-    d2 = sample_norms + ref_norms - 2.0 * (samples_scaled @ ref_scaled.T)
-    np.maximum(d2, 0.0, out=d2)
-
-    nearest = np.partition(np.sqrt(d2), kth=k_eff - 1, axis=1)[:, :k_eff]
+    nearest = np.partition(dists, kth=k_eff - 1, axis=1)[:, :k_eff]
     return nearest.mean(axis=1)
 
 
-def classify_outliers(scores: np.ndarray, contamination: float | None = None, n_outliers: int | None = None) -> np.ndarray:
-    """
-    Return boolean predictions where True means predicted poison/outlier.
-    """
+def classify_outliers(
+    scores: np.ndarray,
+    contamination: float | None = None,
+    n_outliers: int | None = None,
+) -> np.ndarray:
+    """Return boolean predictions where True means predicted poison/outlier."""
     scores = np.asarray(scores, dtype=np.float64)
-    if n_outliers is None:
-        if contamination is None:
-            contamination = 0.1
-        n_outliers = int(round(len(scores) * float(contamination)))
-    n_outliers = int(np.clip(n_outliers, 0, len(scores)))
+    n_outliers = _resolve_outlier_count(len(scores), contamination, n_outliers)
 
     pred = np.zeros(len(scores), dtype=bool)
-    if n_outliers == 0:
-        return pred
-
-    outlier_idx = np.argsort(scores)[-n_outliers:]
-    pred[outlier_idx] = True
+    if n_outliers > 0:
+        pred[np.argsort(scores)[-n_outliers:]] = True
     return pred
 
 
-def scores_to_trust_weights(
-    scores: np.ndarray,
-    threshold: float | None = None,
-    scale: float | None = None,
-    temperature: float = 1.0,
-) -> np.ndarray:
-    """
-    Convert outlier scores to soft trust weights in [0, 1].
-
-    Higher outlier score -> lower trust. If threshold is provided, it should be
-    the score boundary between trusted and outlier trajectories.
-    """
-    scores = np.asarray(scores, dtype=np.float64)
-    if threshold is None:
-        threshold = float(np.median(scores))
-    if scale is None:
-        q25 = float(np.percentile(scores, 25))
-        q75 = float(np.percentile(scores, 75))
-        scale = q75 - q25
-        if scale < 1e-8:
-            scale = float(np.std(scores))
-        if scale < 1e-8:
-            scale = 1.0
-
-    z = (scores - float(threshold)) / float(scale)
-    z = np.clip(z, -60.0, 60.0)
-    return 1.0 / (1.0 + np.exp(float(temperature) * z))
-
-
-def reward_scores_to_trust_weights(
-    scores: np.ndarray,
-    threshold: float | None = None,
-    scale: float | None = None,
-    temperature: float = 1.0,
-) -> np.ndarray:
-    """
-    Convert reward-consistency scores to soft trust weights in [0, 1].
-
-    Higher reward/log-likelihood score -> higher trust. If threshold is not
-    provided, the median score is used as the midpoint.
-    """
-    scores = np.asarray(scores, dtype=np.float64)
-    if threshold is None:
-        threshold = float(np.median(scores))
-    if scale is None:
-        q25 = float(np.percentile(scores, 25))
-        q75 = float(np.percentile(scores, 75))
-        scale = q75 - q25
-        if scale < 1e-8:
-            scale = float(np.std(scores))
-        if scale < 1e-8:
-            scale = 1.0
-
-    z = (scores - float(threshold)) / float(scale)
-    z = np.clip(z, -60.0, 60.0)
-    return 1.0 / (1.0 + np.exp(-float(temperature) * z))
-
-
 def binary_metrics(scores: np.ndarray, labels: list[str] | np.ndarray, pred_outlier: np.ndarray) -> dict:
-    """
-    Compute simple diagnostics using known labels. Poison is the positive class.
-    """
+    """Compute simple diagnostics using known labels. Poison is the positive class."""
     y_true = np.array([str(label) == "poison" for label in labels], dtype=bool)
     pred = np.asarray(pred_outlier, dtype=bool)
     scores = np.asarray(scores, dtype=np.float64)
@@ -263,29 +207,261 @@ def binary_metrics(scores: np.ndarray, labels: list[str] | np.ndarray, pred_outl
         "recall": float(recall),
         "accuracy": float(accuracy),
         "auc": float(_auc_pairwise(scores, y_true)),
-        "mean_expert_score": float(scores[~y_true].mean()) if np.any(~y_true) else float("nan"),
-        "mean_poison_score": float(scores[y_true].mean()) if np.any(y_true) else float("nan"),
+        "mean_expert_score": _mean_or_nan(scores[~y_true]),
+        "mean_poison_score": _mean_or_nan(scores[y_true]),
     }
 
 
+# ---------------------------------------------------------------------------
+# Score-to-weight mappings
+# ---------------------------------------------------------------------------
+
+
+def scores_to_trust_weights(
+    scores: np.ndarray,
+    threshold: float | None = None,
+    scale: float | None = None,
+    temperature: float = 1.0,
+) -> np.ndarray:
+    """
+    Convert outlier scores to trust weights in [0, 1].
+
+    Higher outlier score means lower trust.
+    """
+    return _sigmoid_trust_weights(
+        scores,
+        threshold=threshold,
+        scale=scale,
+        temperature=temperature,
+        higher_score_is_trusted=False,
+    )
+
+
+def reward_scores_to_trust_weights(
+    scores: np.ndarray,
+    threshold: float | None = None,
+    scale: float | None = None,
+    temperature: float = 1.0,
+) -> np.ndarray:
+    """
+    Convert reward/log-likelihood scores to trust weights in [0, 1].
+
+    Higher reward-consistency score means higher trust.
+    """
+    return _sigmoid_trust_weights(
+        scores,
+        threshold=threshold,
+        scale=scale,
+        temperature=temperature,
+        higher_score_is_trusted=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Robust scaling
+# ---------------------------------------------------------------------------
+
+
 def robust_standardize(x: np.ndarray) -> np.ndarray:
-    median = np.median(x, axis=0)
+    """Robust-standardize columns using median and IQR, with std fallback."""
+    x = _as_2d_float(x, name="x")
+    center, scale = _robust_center_scale(x)
+    return (x - center) / scale
+
+
+def robust_standardize_against_reference(
+    reference: np.ndarray,
+    samples: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Scale reference and samples using robust statistics from reference only."""
+    reference = _as_2d_float(reference, name="reference")
+    samples = _as_2d_float(samples, name="samples")
+    if reference.shape[1] != samples.shape[1]:
+        raise ValueError("Reference and sample arrays must have the same feature dimension.")
+
+    center, scale = _robust_center_scale(reference)
+    return (reference - center) / scale, (samples - center) / scale
+
+
+# ---------------------------------------------------------------------------
+# High-level beta functions
+# ---------------------------------------------------------------------------
+
+
+def beta_OD(
+    demo_trajs,
+    contamination: float = 0.1,
+    k: int = 5,
+    summary_mode: SummaryMode = "action",
+    frame_stride: int = 10,
+) -> np.ndarray:
+    """
+    β_OD: unsupervised KNN outlier-detection trust weights.
+
+    Returns one weight per demo trajectory. Higher weight means more trusted.
+    """
+    summaries = _trajectory_summaries(demo_trajs, mode=summary_mode, frame_stride=frame_stride)
+    scores = knn_outlier_scores(summaries, k=k)
+    threshold = _contamination_threshold(scores, contamination)
+    return scores_to_trust_weights(scores, threshold=threshold)
+
+
+def beta_RC(
+    irl,
+    demo_trajs,
+    bg_trajs,
+    K: int = 3,
+    lam: float = 1.0,
+    n_iter_per_step: int = 300,
+    verbose: bool = False,
+) -> np.ndarray:
+    """
+    β_RC: Reward Consistency trust weights.
+
+    The loop starts with uniform weights, trains MaxEnt IRL, scores each
+    trajectory by log P(tau_i | theta), updates beta from those scores, and
+    repeats. The final irl.theta is trained with the returned beta weights.
+    """
+    if len(demo_trajs) == 0:
+        raise ValueError("Reward Consistency needs at least one demo trajectory.")
+    if len(bg_trajs) == 0:
+        raise ValueError("Reward Consistency needs at least one background trajectory.")
+
+    weights = np.ones(len(demo_trajs), dtype=np.float64)
+    n_outer = max(1, int(K))
+
+    for step in range(n_outer):
+        _train_from_reset(irl, demo_trajs, bg_trajs, weights, n_iter_per_step, verbose)
+
+        scores = reward_log_likelihood_scores(irl, demo_trajs, bg_trajs)
+        weights = reward_scores_to_trust_weights(scores, temperature=lam)
+
+        if verbose:
+            print(
+                f"  RC iter {step + 1}/{n_outer}: "
+                f"weights min={weights.min():.3f} "
+                f"max={weights.max():.3f} "
+                f"mean={weights.mean():.3f}"
+            )
+
+    _train_from_reset(irl, demo_trajs, bg_trajs, weights, n_iter_per_step, verbose)
+    return weights
+
+
+def reward_log_likelihood_scores(irl, demo_trajs, bg_trajs) -> np.ndarray:
+    """Score demos by log P(tau | theta) under the background partition set."""
+    log_z = _logsumexp(np.array([irl.score_trajectory(t) for t in bg_trajs]))
+    return np.array([irl.score_trajectory(t) - log_z for t in demo_trajs])
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _trajectory_summaries(
+    trajectories,
+    mode: SummaryMode = "action",
+    frame_stride: int = 10,
+) -> np.ndarray:
+    return np.array(
+        [
+            trajectory_summary(t.states, t.actions, mode=mode, frame_stride=frame_stride)[0]
+            for t in trajectories
+        ],
+        dtype=np.float64,
+    )
+
+
+def _sigmoid_trust_weights(
+    scores: np.ndarray,
+    *,
+    threshold: float | None,
+    scale: float | None,
+    temperature: float,
+    higher_score_is_trusted: bool,
+) -> np.ndarray:
+    scores = np.asarray(scores, dtype=np.float64)
+    if len(scores) == 0:
+        return np.array([], dtype=np.float64)
+
+    center = float(np.median(scores)) if threshold is None else float(threshold)
+    denom = _score_scale(scores) if scale is None else max(float(scale), _EPS)
+    z = np.clip((scores - center) / denom, -_LOGISTIC_CLIP, _LOGISTIC_CLIP)
+
+    sign = -1.0 if higher_score_is_trusted else 1.0
+    return 1.0 / (1.0 + np.exp(sign * float(temperature) * z))
+
+
+def _score_scale(scores: np.ndarray) -> float:
+    q25 = float(np.percentile(scores, 25))
+    q75 = float(np.percentile(scores, 75))
+    scale = q75 - q25
+    if scale < _EPS:
+        scale = float(np.std(scores))
+    return scale if scale >= _EPS else 1.0
+
+
+def _contamination_threshold(scores: np.ndarray, contamination: float | None) -> float | None:
+    if contamination is None:
+        return None
+    contamination = float(np.clip(contamination, 0.0, 1.0))
+    return float(np.percentile(scores, 100.0 * (1.0 - contamination)))
+
+
+def _resolve_outlier_count(
+    n_samples: int,
+    contamination: float | None,
+    n_outliers: int | None,
+) -> int:
+    if n_outliers is None:
+        contamination = 0.1 if contamination is None else float(contamination)
+        n_outliers = int(round(n_samples * contamination))
+    return int(np.clip(n_outliers, 0, n_samples))
+
+
+def _robust_center_scale(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    center = np.median(x, axis=0)
     q25 = np.percentile(x, 25, axis=0)
     q75 = np.percentile(x, 75, axis=0)
     scale = q75 - q25
-    scale = np.where(scale < 1e-8, np.std(x, axis=0), scale)
-    scale = np.where(scale < 1e-8, 1.0, scale)
-    return (x - median) / scale
+    scale = np.where(scale < _EPS, np.std(x, axis=0), scale)
+    scale = np.where(scale < _EPS, 1.0, scale)
+    return center, scale
 
 
-def robust_standardize_against_reference(reference: np.ndarray, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    median = np.median(reference, axis=0)
-    q25 = np.percentile(reference, 25, axis=0)
-    q75 = np.percentile(reference, 75, axis=0)
-    scale = q75 - q25
-    scale = np.where(scale < 1e-8, np.std(reference, axis=0), scale)
-    scale = np.where(scale < 1e-8, 1.0, scale)
-    return (reference - median) / scale, (samples - median) / scale
+def _pairwise_distances(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    a_norms = np.sum(a * a, axis=1, keepdims=True)
+    b_norms = np.sum(b * b, axis=1, keepdims=True).T
+    d2 = a_norms + b_norms - 2.0 * (a @ b.T)
+    np.maximum(d2, 0.0, out=d2)
+    return np.sqrt(d2)
+
+
+def _train_from_reset(
+    irl,
+    demo_trajs,
+    bg_trajs,
+    weights: np.ndarray,
+    n_iter: int,
+    verbose: bool,
+) -> None:
+    irl.reset()
+    irl.train(demo_trajs, bg_trajs, weights=weights, n_iter=n_iter, verbose=verbose)
+
+
+def _as_actions(actions: np.ndarray) -> np.ndarray:
+    actions = np.asarray(actions, dtype=np.int64).reshape(-1)
+    if len(actions) == 0:
+        raise ValueError("Cannot summarize an empty action sequence.")
+    return actions
+
+
+def _as_2d_float(values: np.ndarray, *, name: str) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float64)
+    if values.ndim != 2:
+        raise ValueError(f"{name} must be a 2-D array.")
+    return values
 
 
 def _action_freq(actions: np.ndarray) -> np.ndarray:
@@ -305,9 +481,6 @@ def _entropy(freq: np.ndarray) -> float:
 
 
 def _longest_run_fraction(actions: np.ndarray) -> float:
-    if len(actions) == 0:
-        return 0.0
-
     longest = 1
     current = 1
     for i in range(1, len(actions)):
@@ -316,8 +489,7 @@ def _longest_run_fraction(actions: np.ndarray) -> float:
         else:
             longest = max(longest, current)
             current = 1
-    longest = max(longest, current)
-    return float(longest / len(actions))
+    return float(max(longest, current) / len(actions))
 
 
 def _auc_pairwise(scores: np.ndarray, y_true: np.ndarray) -> float:
@@ -332,71 +504,11 @@ def _auc_pairwise(scores: np.ndarray, y_true: np.ndarray) -> float:
     return float((wins + 0.5 * ties) / comparisons.size)
 
 
-# ---------------------------------------------------------------------------
-# High-level β functions for ANTIDOTE
-# ---------------------------------------------------------------------------
+def _mean_or_nan(values: np.ndarray) -> float:
+    return float(values.mean()) if len(values) else float("nan")
 
 
-def beta_OD(
-    demo_trajs,
-    contamination: float = 0.1,
-    k: int = 5,
-) -> np.ndarray:
-    """
-    β_OD: Outlier Detection trust weights (unsupervised, action-summary KNN).
-
-    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
-    """
-    summaries = np.array([action_summary(t.actions)[0] for t in demo_trajs])
-    scores = knn_outlier_scores(summaries, k=k)
-    return scores_to_trust_weights(scores)
-
-
-def beta_RC(
-    irl,
-    demo_trajs,
-    bg_trajs,
-    K: int = 3,
-    lam: float = 1.0,
-    n_iter_per_step: int = 300,
-    verbose: bool = False,
-) -> np.ndarray:
-    """
-    β_RC: Reward Consistency trust weights (EM-style self-correction).
-
-    Starts by learning a reward with uniform weights, then alternates:
-      E-step: score trajectories by current reward/log-likelihood
-      M-step: re-learn reward with updated trust weights
-
-    Returns (N_demo,) weights from the final E-step. The irl model's θ is then
-    updated in-place by a final weighted M-step using those returned weights.
-
-    Returns (N_demo,) weights in [0, 1]. Higher = more trusted.
-    """
-    weights = np.ones(len(demo_trajs), dtype=np.float64)
-
-    for k in range(K):
-        irl.reset()
-        irl.train(demo_trajs, bg_trajs, weights=weights,
-                  n_iter=n_iter_per_step, verbose=verbose)
-
-        log_z = _background_log_z(irl, bg_trajs)
-        scores = np.array([irl.score_trajectory(t) - log_z for t in demo_trajs])
-        weights = reward_scores_to_trust_weights(scores, temperature=lam)
-
-        if verbose:
-            print(f"  RC iter {k+1}/{K}: "
-                  f"weights min={weights.min():.3f} "
-                  f"max={weights.max():.3f} "
-                  f"mean={weights.mean():.3f}")
-
-    irl.reset()
-    irl.train(demo_trajs, bg_trajs, weights=weights,
-              n_iter=n_iter_per_step, verbose=verbose)
-    return weights
-
-
-def _background_log_z(irl, bg_trajs) -> float:
-    returns = np.array([irl.score_trajectory(t) for t in bg_trajs])
-    c = float(returns.max())
-    return float(c + np.log(np.exp(returns - c).sum()))
+def _logsumexp(values: np.ndarray) -> float:
+    values = np.asarray(values, dtype=np.float64)
+    center = float(values.max())
+    return float(center + np.log(np.exp(values - center).sum()))

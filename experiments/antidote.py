@@ -173,6 +173,8 @@ def main():
     parser.add_argument("--ae-epochs",      type=int, default=200)
     parser.add_argument("--ae-summary-mode", default="action", choices=["action", "v2"])
     parser.add_argument("--ae-frame-stride", type=int, default=10)
+    parser.add_argument("--rc-k",           type=int, default=3,
+                        help="Number of Reward Consistency outer reweighting iterations.")
     parser.add_argument("--results-dir",    default="results/antidote")
     parser.add_argument("--seed",           type=int, default=None,
                         help="Random seed for reproducible sampling/training. Default: random each run.")
@@ -329,7 +331,7 @@ def main():
         elif method == "RC":
             print("  [β_RC] Running EM reward-consistency loop...")
             weights = beta_RC(irl, demo_trajs, bg_trajs,
-                              K=3, lam=1.0, n_iter_per_step=300, verbose=True)
+                              K=args.rc_k, lam=1.0, n_iter_per_step=300, verbose=True)
             print(f"  Final RC weights: min={weights.min():.3f}  "
                   f"max={weights.max():.3f}  mean={weights.mean():.3f}")
 
@@ -357,6 +359,7 @@ def main():
             "irl_iters":    args.irl_iters,
             "feature_version": args.feature_version,
             "feature_names": extractor.feature_names,
+            "rc_k":        args.rc_k if method == "RC" else None,
             "seed":         args.seed,
             "theta":        irl.theta.tolist(),
             "train_poison_paths": [_relpath(p) for p in sampled_poison_paths],

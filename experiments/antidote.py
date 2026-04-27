@@ -54,10 +54,9 @@ ALL_METHODS = ["baseline", "OD", "AE", "RC"]
 # 1000 expert files available; demos sample outside 950–999.
 EVAL_EXPERT_INDICES = list(range(950, 1000))  # 50 held-out expert trajectories
 
-# When the eval poison dir is the SAME as the training poison dir, we reserve
-# the last N_EVAL_POISON_SAME files (by sorted index) as held-out and exclude
-# them from the demo pool.  With poison_stop (100 files) this gives 10 held-out
-# and 90 available for demos — D5 gets 90 poison instead of 100.
+# When the eval poison dir is the SAME as the training poison dir, we randomly
+# reserve N_EVAL_POISON_SAME files as held-out and exclude them from the demo
+# pool, guaranteeing no train/eval poison overlap.
 # When the dirs differ we do a random sample of N_EVAL_POISON_CROSS files.
 N_EVAL_POISON_SAME  = 10   # same-dir held-out (e.g. poison_stop → poison_stop)
 N_EVAL_POISON_CROSS = 50   # cross-dir held-out (e.g. poison_stop → poison_random)
@@ -235,14 +234,14 @@ def main():
     expert_trajs = [_load_path(p, extractor) for p in sampled_expert_paths]
     print(f"  Loaded {len(expert_trajs)} expert trajectories")
 
-    # Poison demo pool — if eval uses the same dir, reserve the tail for held-out
+    # Poison demo pool. If eval uses the same dir, reserve a random held-out
+    # subset first so train and eval poison never overlap.
     all_poison_paths = sorted(glob.glob(os.path.join(args.poison_dir, "traj_*.npz")))
     if same_dir:
-        eval_poison_indices = set(range(len(all_poison_paths) - N_EVAL_POISON_SAME,
-                                        len(all_poison_paths)))
-        demo_poison_paths   = [p for i, p in enumerate(all_poison_paths)
-                               if i not in eval_poison_indices]
-        held_out_poison_paths = [all_poison_paths[i] for i in sorted(eval_poison_indices)]
+        n_eval_poison = min(N_EVAL_POISON_SAME, len(all_poison_paths))
+        held_out_poison_paths = random.sample(all_poison_paths, n_eval_poison)
+        held_out_poison_set = set(held_out_poison_paths)
+        demo_poison_paths = [p for p in all_poison_paths if p not in held_out_poison_set]
     else:
         demo_poison_paths = all_poison_paths
         held_out_poison_paths = None  # will random-sample from eval_poison_dir
@@ -269,7 +268,7 @@ def main():
                                  extractor, "held-out expert")
     if same_dir:
         held_out_poison = [_load_path(p, extractor) for p in held_out_poison_paths]
-        print(f"  Loaded {len(held_out_poison)} held-out poison trajectories (same-dir tail)")
+        print(f"  Loaded {len(held_out_poison)} held-out poison trajectories (same-dir random split)")
     else:
         held_out_poison, held_out_poison_paths = load_dir(
             args.eval_poison_dir,
@@ -278,6 +277,10 @@ def main():
             "held-out poison",
             return_paths=True,
         )
+
+    overlap = set(sampled_poison_paths) & set(held_out_poison_paths)
+    if overlap:
+        raise RuntimeError(f"Train/eval poison overlap detected: {sorted(overlap)}")
 
     print(f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  "
           f"feature_dim={extractor.feature_dim}  feature_version={args.feature_version}")
@@ -344,7 +347,7 @@ def main():
             "train_poison_dir": args.poison_dir,
             "eval_poison_dir": args.eval_poison_dir,
             "eval_poison_same_dir": same_dir,
-            "eval_poison_split": "same_dir_tail" if same_dir else "cross_dir_random",
+            "eval_poison_split": "same_dir_random" if same_dir else "cross_dir_random",
             "n_expert":     n_expert,
             "n_poison":     len(poison_trajs),
             "n_requested_poison": n_poison,

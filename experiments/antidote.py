@@ -74,13 +74,19 @@ def _load_path(path, extractor):
     return traj
 
 
-def load_dir(directory, n, extractor, label=""):
+def _relpath(path: str) -> str:
+    return os.path.relpath(path, start=os.getcwd())
+
+
+def load_dir(directory, n, extractor, label="", return_paths=False):
     paths = sorted(glob.glob(os.path.join(directory, "traj_*.npz")))
     if len(paths) < n:
         raise ValueError(f"Need {n} trajectories in {directory}, found {len(paths)}")
     paths = random.sample(paths, n)
     trajs = [_load_path(p, extractor) for p in paths]
     print(f"  Loaded {len(trajs)} {label} trajectories from {directory}")
+    if return_paths:
+        return trajs, paths
     return trajs
 
 
@@ -198,6 +204,10 @@ def main():
     print(f"  Dataset:     {args.dataset}  "
           f"({n_expert} expert + {n_poison} poison = {poison_pct*100:.0f}%)")
     print(f"  Poison:      {args.poison_name}  ({'same-dir split' if same_dir else 'cross-dir eval'})")
+    print(f"  Train poison dir: {args.poison_dir}")
+    print(f"  Eval poison dir:  {args.eval_poison_dir}")
+    if not same_dir:
+        print("  WARNING: held-out poison differs from training poison; metrics are cross-poison eval.")
     print(f"  Methods:     {methods}")
     print(f"  Results →    {results_dir}")
     print(f"{'='*60}")
@@ -235,6 +245,7 @@ def main():
         held_out_poison_paths = None  # will random-sample from eval_poison_dir
 
     poison_trajs = []
+    sampled_poison_paths = []
     if n_poison > 0:
         avail = len(demo_poison_paths)
         actual_n_poison = min(n_poison, avail)
@@ -257,8 +268,13 @@ def main():
         held_out_poison = [_load_path(p, extractor) for p in held_out_poison_paths]
         print(f"  Loaded {len(held_out_poison)} held-out poison trajectories (same-dir tail)")
     else:
-        held_out_poison = load_dir(args.eval_poison_dir, N_EVAL_POISON_CROSS,
-                                   extractor, "held-out poison")
+        held_out_poison, held_out_poison_paths = load_dir(
+            args.eval_poison_dir,
+            N_EVAL_POISON_CROSS,
+            extractor,
+            "held-out poison",
+            return_paths=True,
+        )
 
     print(f"  Demos: {len(demo_trajs)}  Background: {len(bg_trajs)}  "
           f"feature_dim={extractor.feature_dim}  feature_version={args.feature_version}")
@@ -322,14 +338,23 @@ def main():
             "method":       method,
             "poison_name":  args.poison_name,
             "poison_dir":   args.poison_dir,
+            "train_poison_dir": args.poison_dir,
+            "eval_poison_dir": args.eval_poison_dir,
+            "eval_poison_same_dir": same_dir,
+            "eval_poison_split": "same_dir_tail" if same_dir else "cross_dir_random",
             "n_expert":     n_expert,
             "n_poison":     len(poison_trajs),
+            "n_requested_poison": n_poison,
+            "n_available_train_poison": len(demo_poison_paths),
+            "n_requested_held_out_poison": N_EVAL_POISON_SAME if same_dir else N_EVAL_POISON_CROSS,
             "poison_pct":   len(poison_trajs) / (n_expert + len(poison_trajs)) if poison_trajs else 0.0,
             "irl_iters":    args.irl_iters,
             "feature_version": args.feature_version,
             "feature_names": extractor.feature_names,
             "seed":         args.seed,
             "theta":        irl.theta.tolist(),
+            "train_poison_paths": [_relpath(p) for p in sampled_poison_paths],
+            "held_out_poison_paths": [_relpath(p) for p in held_out_poison_paths],
             **eval_metrics,
         }
 
